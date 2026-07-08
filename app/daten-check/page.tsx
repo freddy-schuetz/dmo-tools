@@ -68,7 +68,7 @@ export default function DatenCheck() {
           Wie gut ist deine Region in OpenStreetMap erfasst?
         </h1>
         <p className="mx-auto max-w-2xl text-slate-600">
-          OpenStreetMap speist Apple Karten, Bing und zunehmend KI-Assistenten. Wir prüfen, wie
+          OpenStreetMap speist Komoot, Outdooractive, Apple Karten, Bing und zunehmend KI-Assistenten. Wir prüfen, wie
           vollständig die Tourismus-Betriebe deiner Region erfasst sind — und zeigen die größten Lücken.
         </p>
       </header>
