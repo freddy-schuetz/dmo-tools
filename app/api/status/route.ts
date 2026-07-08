@@ -18,9 +18,12 @@ export async function GET(req: NextRequest) {
       signal: AbortSignal.timeout(12_000),
       cache: "no-store",
     });
-    const data = await res.json().catch(() => ({ status: "error" }));
+    // Kein sauberes JSON (z.B. n8n gerade durch schweren Code-Node blockiert) -> transient, weiter pollen
+    const data = await res.json().catch(() => ({ status: "running" }));
     return NextResponse.json(data, { status: 200 });
   } catch {
-    return NextResponse.json({ status: "error", error_message: "upstream_unreachable" }, { status: 200 });
+    // Timeout/Netz-Blip ist NICHT terminal: der Check laeuft weiter -> "running" zurueckgeben,
+    // damit das Frontend weiterpollt statt faelschlich abzubrechen.
+    return NextResponse.json({ status: "running" }, { status: 200 });
   }
 }
