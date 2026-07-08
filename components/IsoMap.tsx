@@ -119,7 +119,10 @@ export default function IsoMap({
         source: "pois",
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 4, 15, 7],
-          "circle-color": ["coalesce", ["get", "color"], "#0ea5e9"],
+          // to-color castet den per-Feature "color"-String explizit zu einer Farbe.
+          // Ohne to-color liefert ["get","color"] Typ "value" -> MapLibre faellt still
+          // auf den Fallback zurueck (alle Punkte blau). applyPois setzt color immer.
+          "circle-color": ["to-color", ["coalesce", ["get", "color"], "#0ea5e9"]],
           "circle-stroke-color": "#ffffff",
           "circle-stroke-width": 1.5,
           "circle-opacity": 0.9,
