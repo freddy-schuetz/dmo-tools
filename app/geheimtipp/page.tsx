@@ -137,7 +137,7 @@ export default function Geheimtipp() {
           pois={pois}
           method={METHOD}
           mailSubject="Geheimtipp-Radar für unsere Region"
-          routeMode="foot"
+          routeMode="car"
           extraFeatures={hotspotFeatures}
         >
           {result.hotspots.length > 0 && (

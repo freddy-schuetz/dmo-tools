@@ -56,6 +56,7 @@ export type RichPoi = {
   image?: string | null; // freie Quelle (Wikipedia/Commons)
   wiki_url?: string | null; // Quelle/Attribution
   open_now?: boolean | null;
+  opening_hours?: string | null;
   website?: string | null;
   phone?: string | null;
   wheelchair?: string | null;
@@ -88,7 +89,7 @@ export type LadeLueckenResult = {
   radius_km: number;
   grid: GapCell[];
   chargers: FeatureCollection;
-  summary: { cells: number; gap_pct: number; worst_dist_km: number; charger_count: number };
+  summary: { cells: number; gap_pct: number; worst_dist_km: number; charger_count: number; step_km?: number };
 };
 
 // --- 3 Thementouren-Generator ----------------------------------------------
@@ -132,12 +133,16 @@ export type NaturwunderResult = { center: LngLat; wonders: Wonder[] };
 export type IndoorPoi = EnrichFields & { id: string; name: string; cat: string; lat: number; lng: number; distance_km: number; open_now: boolean | null; website: string | null };
 export type SchlechtwetterResult = {
   center: LngLat;
-  weather: { temp: number; precipitation: number; rain_soon: boolean; recommendation: "indoor" | "outdoor"; summary: string };
+  weather: {
+    temp: number; precipitation: number; rain_soon: boolean;
+    recommendation: "indoor" | "outdoor"; summary: string;
+    hours?: { t: string; prob: number }[];
+  };
   pois: IndoorPoi[];
 };
 
 // --- 8 Ruhe-Finder ----------------------------------------------------------
-export type QuietSpot = { name: string; lat: number; lng: number; score: number; nearest_noise_km: number; type: string };
+export type QuietSpot = { id: string; name: string; lat: number; lng: number; score: number; nearest_noise_km: number; type: string };
 export type RuheResult = { center: LngLat; radius_km: number; quiet_spots: QuietSpot[] };
 
 // --- 9 Geheimtipp-Radar -----------------------------------------------------
@@ -150,7 +155,10 @@ export type WildlifeSpot = EnrichFields & { id: string; name: string; type: stri
 export type WildtierResult = { center: LngLat; radius_km: number; region_species: Species[]; spots: WildlifeSpot[] };
 
 // --- 11 Laden-&-Erleben -----------------------------------------------------
-export type NearbyPoi = { name: string; cat: string; dist_m: number };
+export type NearbyPoi = {
+  id?: string; name: string; cat: string; emoji?: string; lat?: number; lng?: number; dist_m: number;
+  description?: string | null; image?: string | null; wiki_url?: string | null; website?: string | null;
+};
 export type ChargeStation = {
   id: string; name: string; operator: string | null; lat: number; lng: number;
   max_kw: number | null; fast: boolean; connectors: string[]; nearby: NearbyPoi[];
@@ -168,5 +176,6 @@ export type EautoAusflugResult = { center: LngLat; range_km: number; trips: Eaut
 export type ChargeHikeSpot = {
   id: string; name: string; lat: number; lng: number; distance_km: number;
   max_kw: number | null; fast: boolean; parking: string | null; trail_hint: string | null;
+  trail_lat?: number; trail_lng?: number;
 };
 export type LadenWandernResult = { center: LngLat; spots: ChargeHikeSpot[] };

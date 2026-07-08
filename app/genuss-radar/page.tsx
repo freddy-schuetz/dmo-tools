@@ -78,6 +78,7 @@ export default function GenussRadar() {
         image: p.image,
         wiki_url: p.wiki_url,
         open_now: p.open_now,
+        opening_hours: p.opening_hours,
         website: p.website,
         phone: p.phone,
         wheelchair: p.wheelchair,

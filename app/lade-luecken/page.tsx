@@ -63,24 +63,49 @@ export default function LadeLuecken() {
     }
   }
 
-  // Grid-Zellen (rot = Lücke, grün = versorgt) + Ladesäulen in EINE POI-FeatureCollection
+  // Eingefärbte Heat-Fläche: je Rasterzelle ein Quadrat, Farbe interpoliert über die Distanz
+  // zur nächsten Säule (grün nah → gelb → rot weit weg).
+  const heatCells = useMemo(() => {
+    if (!result) return [];
+    const step = result.summary.step_km ?? 2;
+    const hLat = step / 2 / 111;
+    const features = result.grid.map((c) => {
+      const hLng = step / 2 / (111 * Math.cos((c.lat * Math.PI) / 180));
+      return {
+        type: "Feature" as const,
+        properties: { dist_km: Math.min(c.dist_km, 10) },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [[
+            [c.lng - hLng, c.lat - hLat],
+            [c.lng + hLng, c.lat - hLat],
+            [c.lng + hLng, c.lat + hLat],
+            [c.lng - hLng, c.lat + hLat],
+            [c.lng - hLng, c.lat - hLat],
+          ]],
+        },
+      };
+    });
+    return [{
+      id: "coverage",
+      data: { type: "FeatureCollection" as const, features },
+      property: "dist_km",
+      // 0 km grün · 5 km gelb (Grenze) · 10 km+ rot
+      stops: [[0, "#16a34a"], [3, "#84cc16"], [5, "#eab308"], [7, "#f97316"], [10, "#dc2626"]] as [number, string][],
+      opacity: 0.55,
+    }];
+  }, [result]);
+
+  // Ladesäulen als ⚡-Punkte
   const pois = useMemo<FeatureCollection | null>(() => {
     if (!result) return null;
-    const cells = result.grid.map((c) => ({
-      type: "Feature" as const,
-      properties: {
-        cat: "cell",
-        name: c.gap ? "Lade-Lücke" : "versorgt",
-        sub: `${c.dist_km} km zur nächsten Säule`,
-        color: c.gap ? "#dc2626" : "#16a34a",
-      },
-      geometry: { type: "Point" as const, coordinates: [c.lng, c.lat] },
-    }));
-    const chargers = result.chargers.features.map((f) => ({
-      ...f,
-      properties: { ...f.properties, color: "#1e3a5f", cat: "charger" },
-    }));
-    return { type: "FeatureCollection", features: [...cells, ...chargers] };
+    return {
+      type: "FeatureCollection",
+      features: result.chargers.features.map((f) => ({
+        ...f,
+        properties: { ...f.properties, color: "#1e3a5f", emoji: "⚡", name: (f.properties as { name?: string })?.name ?? "Ladestation", category_label: "Ladestation" },
+      })),
+    };
   }, [result]);
 
   const readiness = result ? Math.max(0, 100 - result.summary.gap_pct) : 0;
@@ -152,13 +177,20 @@ export default function LadeLuecken() {
             <IsoMapDynamic
               center={[result.center.lng, result.center.lat]}
               zones={[]}
+              heatCells={heatCells}
               pois={pois}
               markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#0ea5e9" }]}
               heightClass="h-[480px]"
             />
-            <p className="px-6 py-3 text-center text-xs text-slate-500">
-              🟥 Lade-Lücke (&gt; 5 km) · 🟩 versorgt · 🔵 Ladestation · hellblau: Zentrum
-            </p>
+            <div className="px-6 py-3">
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span>Distanz zur nächsten Säule:</span>
+                <span>0 km</span>
+                <div className="h-2 flex-1 rounded" style={{ background: "linear-gradient(90deg,#16a34a,#84cc16,#eab308,#f97316,#dc2626)" }} />
+                <span>10 km+</span>
+              </div>
+              <p className="mt-1 text-center text-xs text-slate-400">Grüne Fläche = gut versorgt · rote Fläche = Lade-Wüste · ⚡ Ladestation · blaue Nadel: Zentrum</p>
+            </div>
           </Card>
 
           <MethodBox content={METHOD} />

@@ -2,17 +2,19 @@
 
 import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
-import IsoMapDynamic from "@/components/IsoMapDynamic";
 import OptionPills from "@/components/OptionPills";
-import MethodBox, { type MethodContent } from "@/components/MethodBox";
-import AboutSection from "@/components/AboutSection";
+import RichResults from "@/components/RichResults";
+import { type MethodContent } from "@/components/MethodBox";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
 import { usePolling } from "@/lib/usePolling";
-import type { FeatureCollection, GeocodeHit, RuheResult } from "@/lib/types";
+import type { GeocodeHit, RichPoi, RuheResult } from "@/lib/types";
 
 function scoreColor(s: number) {
   return s >= 75 ? "#16a34a" : s >= 50 ? "#eab308" : "#f97316";
 }
+const TYPE_EMOJI: Record<string, string> = {
+  Gipfel: "🏔️", Aussichtspunkt: "👁️", Park: "🌳", Wald: "🌲", Schutzgebiet: "🌿",
+};
 
 const METHOD: MethodContent = {
   intro:
@@ -63,16 +65,20 @@ export default function RuheFinder() {
     }
   }
 
-  const pois = useMemo<FeatureCollection | null>(() => {
-    if (!result) return null;
-    return {
-      type: "FeatureCollection",
-      features: result.quiet_spots.map((s) => ({
-        type: "Feature",
-        properties: { cat: "quiet", name: s.name, sub: `Ruhe-Score ${s.score} · ${s.nearest_noise_km} km bis Lärm`, color: scoreColor(s.score) },
-        geometry: { type: "Point", coordinates: [s.lng, s.lat] },
-      })),
-    };
+  const pois = useMemo<RichPoi[]>(() => {
+    if (!result) return [];
+    return result.quiet_spots.map((s) => ({
+      id: s.id,
+      name: s.name,
+      lat: s.lat,
+      lng: s.lng,
+      emoji: TYPE_EMOJI[s.type] ?? "🍃",
+      color: scoreColor(s.score),
+      category_label: s.type,
+      meta_right: `Ruhe ${s.score}/100`,
+      ai_why: `${s.nearest_noise_km} km bis zur nächsten Lärmquelle — hier ist es wirklich still.`,
+      badges: s.score >= 75 ? ["sehr ruhig"] : undefined,
+    }));
   }, [result]);
 
   return (
@@ -108,31 +114,13 @@ export default function RuheFinder() {
       {(status === "error" || status === "timeout" || status === "not_found") && <ErrorBox message={errorMessage} />}
 
       {status === "done" && result && (
-        <section className="space-y-5">
-          <IsoMapDynamic
-            center={[result.center.lng, result.center.lat]}
-            zones={[]}
-            pois={pois}
-            markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
-            heightClass="h-[440px]"
-          />
-          <p className="-mt-4 text-center text-xs text-slate-500">🟢 sehr ruhig · 🟡 ruhig · 🟠 mäßig ruhig</p>
-          <ol className="space-y-2">
-            {result.quiet_spots.map((s, i) => (
-              <li key={i} className="flex items-center gap-3 rounded-xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-slate-200">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white" style={{ backgroundColor: scoreColor(s.score) }}>
-                  {s.score}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{s.name}</p>
-                  <p className="text-xs text-slate-500">{s.type} · {s.nearest_noise_km} km bis zur nächsten Lärmquelle</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-          <MethodBox content={METHOD} />
-          <AboutSection mailSubject="Ruhe-Finder für unsere Region" />
-        </section>
+        <RichResults
+          center={result.center}
+          pois={pois}
+          method={METHOD}
+          mailSubject="Ruhe-Finder für unsere Region"
+          routeMode="foot"
+        />
       )}
     </main>
   );

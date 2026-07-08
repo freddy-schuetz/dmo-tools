@@ -123,9 +123,15 @@ export default function LadenWandern() {
                 <p className="mt-1 text-xs text-slate-500">
                   {s.parking ? `🅿️ ${s.parking}` : ""} {s.trail_hint ? `· 🥾 ${s.trail_hint}` : ""}
                 </p>
-                <div className="mt-2 text-sm">
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <a href={`https://hiking.waymarkedtrails.org/#?map=13!${s.trail_lat ?? s.lat}!${s.trail_lng ?? s.lng}`} target="_blank" rel="noopener noreferrer" className="font-medium text-brand hover:text-brand-accent">
+                    🥾 Wanderwege hier ansehen ↗
+                  </a>
+                  <a href={`https://www.komoot.de/plan/@${s.trail_lat ?? s.lat},${s.trail_lng ?? s.lng},13z`} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-brand-accent">
+                    Komoot-Tour planen ↗
+                  </a>
                   <a href={gmaps(s.lat, s.lng)} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-brand-accent">
-                    Route zum Spot ↗
+                    Route zur Säule ↗
                   </a>
                 </div>
               </li>

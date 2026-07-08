@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import RichResults from "@/components/RichResults";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
 import type { MethodContent } from "@/components/MethodBox";
 import { usePolling } from "@/lib/usePolling";
+import { rainviewerTiles } from "@/lib/rainviewer";
 import type { GeocodeHit, RichPoi, SchlechtwetterResult } from "@/lib/types";
 
 const CAT_EMOJI: Record<string, string> = {
@@ -38,6 +39,13 @@ export default function Schlechtwetter() {
   const [token, setToken] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const { status, result, errorMessage } = usePolling<SchlechtwetterResult>(token);
+  const [radarOn, setRadarOn] = useState(true);
+  const [radarTiles, setRadarTiles] = useState<string[] | null>(null);
+
+  // Regenradar-Kacheln (RainViewer) laden, sobald ein Ergebnis da ist
+  useEffect(() => {
+    if (status === "done" && !radarTiles) rainviewerTiles().then(setRadarTiles).catch(() => {});
+  }, [status, radarTiles]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,11 +81,15 @@ export default function Schlechtwetter() {
       image: p.image,
       wiki_url: p.wiki_url,
       open_now: p.open_now,
+      opening_hours: p.opening_hours,
       website: p.website,
       phone: p.phone,
       wheelchair: p.wheelchair,
     }));
   }, [result]);
+
+  const rasterLayers = radarOn && radarTiles ? [{ id: "rain", tiles: radarTiles, opacity: 0.6 }] : [];
+  const hours = result?.weather.hours ?? [];
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
@@ -112,12 +124,44 @@ export default function Schlechtwetter() {
           method={METHOD}
           mailSubject="Schlechtwetter-Radar für unsere Region"
           routeMode="car"
+          rasterLayers={rasterLayers}
         >
-          <div className={`rounded-2xl p-5 text-center ring-1 ${result.weather.recommendation === "indoor" ? "bg-amber-50 ring-amber-300" : "bg-sky-50 ring-sky-200"}`}>
-            <p className="text-lg font-semibold text-brand">
-              {result.weather.temp != null ? `${Math.round(result.weather.temp)}°C · ` : ""}
-              {result.weather.summary}
-            </p>
+          <div className={`rounded-2xl p-5 ring-1 ${result.weather.recommendation === "indoor" ? "bg-amber-50 ring-amber-300" : "bg-sky-50 ring-sky-200"}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-lg font-semibold text-brand">
+                {result.weather.temp != null ? `${Math.round(result.weather.temp)}°C · ` : ""}
+                {result.weather.summary}
+              </p>
+              {radarTiles && (
+                <button
+                  type="button"
+                  onClick={() => setRadarOn((v) => !v)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 transition ${radarOn ? "bg-brand text-white ring-brand" : "bg-white text-slate-600 ring-slate-300"}`}
+                >
+                  🌧️ Regenradar {radarOn ? "an" : "aus"}
+                </button>
+              )}
+            </div>
+            {hours.length > 0 && (
+              <div className="mt-3">
+                <p className="mb-1 text-xs font-medium text-slate-500">Regenwahrscheinlichkeit nächste Stunden</p>
+                <div className="flex items-end gap-1.5">
+                  {hours.map((h, i) => (
+                    <div key={i} className="flex flex-1 flex-col items-center gap-1">
+                      <div className="flex h-16 w-full items-end rounded bg-white/70">
+                        <div
+                          className={`w-full rounded ${h.prob >= 50 ? "bg-blue-600" : h.prob >= 20 ? "bg-sky-400" : "bg-slate-300"}`}
+                          style={{ height: `${Math.max(6, h.prob)}%` }}
+                          title={`${h.prob}%`}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-500">{h.t}</span>
+                      <span className="text-[10px] font-medium text-slate-600">{h.prob}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </RichResults>
       )}
