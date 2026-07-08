@@ -243,16 +243,21 @@ export default function IsoMap({
     if (!map || !readyRef.current) return;
     const src = map.getSource("pois") as maplibregl.GeoJSONSource | undefined;
     const data = poisRef.current ?? EMPTY;
-    // Farbe je Kategorie in die Properties schreiben (einfacher als Match-Expression)
+    // Farbe je Punkt bestimmen: erst poiColors-Map (cat->Farbe, isochrone-Muster),
+    // sonst die am Feature gesetzte Farbe (DMO-Seiten setzen properties.color direkt),
+    // sonst Blau. WICHTIG: die feature-eigene Farbe NICHT ueberschreiben.
     const colored: FeatureCollection = {
       type: "FeatureCollection",
-      features: data.features.map((f) => ({
-        ...f,
-        properties: {
-          ...f.properties,
-          color: poiColorsRef.current[(f.properties as { cat?: string }).cat ?? ""] ?? "#0ea5e9",
-        },
-      })),
+      features: data.features.map((f) => {
+        const p = (f.properties ?? {}) as { cat?: string; color?: string };
+        return {
+          ...f,
+          properties: {
+            ...f.properties,
+            color: poiColorsRef.current[p.cat ?? ""] ?? p.color ?? "#0ea5e9",
+          },
+        };
+      }),
     };
     src?.setData(colored as GeoJSON.GeoJSON);
   }
