@@ -3,9 +3,38 @@
 import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
 import { usePolling } from "@/lib/usePolling";
 import type { FeatureCollection, GeocodeHit, LadenWandernResult } from "@/lib/types";
+
+const METHOD: MethodContent = {
+  intro:
+    "Charge & Hike findet Ladesäulen, die direkt an einem Wanderparkplatz nahe eines Wanderweg-Zugangs liegen — „Park dein E-Auto, lade, während du wanderst\".",
+  sources: [
+    "OpenStreetMap (Overpass API) — Ladestationen, Parkplätze, Wanderweg-Zugänge (Trailhead/Wegweiser/Aussicht/Gipfel) im Umkreis von 15 km",
+    "OSM-Tags — Steckertypen und Ladeleistung (kW)",
+  ],
+  steps: [
+    "Wir laden Ladesäulen, Parkplätze und Wander-Startpunkte der Region.",
+    "Eine Säule qualifiziert sich, wenn ein Parkplatz ≤ 400 m UND ein Wanderweg-Zugang ≤ 1500 m liegt.",
+    "Wir markieren Schnelllader und zeigen den nächsten Wander-Hinweis.",
+    "Per Deep-Link geht es direkt zur Navigation.",
+  ],
+  scoring: [
+    "Schnelllader = CCS/CHAdeMO oder ≥ 50 kW.",
+    "Sortierung nach Entfernung zum Suchort.",
+  ],
+  limits: [
+    "„Wanderweg-Zugang\" leiten wir aus OSM-Signalen ab — die tatsächliche Wegqualität prüfen wir nicht.",
+    "Ladesäulen-Verfügbarkeit/-Leistung ist OSM-Stand und kann abweichen.",
+  ],
+};
+
+function gmaps(lat: number, lng: number) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
 
 export default function LadenWandern() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
@@ -94,9 +123,17 @@ export default function LadenWandern() {
                 <p className="mt-1 text-xs text-slate-500">
                   {s.parking ? `🅿️ ${s.parking}` : ""} {s.trail_hint ? `· 🥾 ${s.trail_hint}` : ""}
                 </p>
+                <div className="mt-2 text-sm">
+                  <a href={gmaps(s.lat, s.lng)} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-brand-accent">
+                    Route zum Spot ↗
+                  </a>
+                </div>
               </li>
             ))}
           </ul>
+
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Charge-&-Hike für unsere Region" />
         </section>
       )}
     </main>

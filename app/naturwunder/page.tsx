@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
-import IsoMapDynamic from "@/components/IsoMapDynamic";
-import PoiList from "@/components/PoiList";
+import RichResults from "@/components/RichResults";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
+import type { MethodContent } from "@/components/MethodBox";
 import { usePolling } from "@/lib/usePolling";
-import type { FeatureCollection, GeocodeHit, NaturwunderResult } from "@/lib/types";
+import type { GeocodeHit, NaturwunderResult, RichPoi } from "@/lib/types";
 
 const TYPE_META: Record<string, { emoji: string; color: string }> = {
   Wasserfall: { emoji: "💧", color: "#0ea5e9" },
@@ -18,6 +18,30 @@ const TYPE_META: Record<string, { emoji: string; color: string }> = {
   Felsformation: { emoji: "🪨", color: "#a16207" },
   "Naturdenkmal-Baum": { emoji: "🌳", color: "#16a34a" },
   Naturwunder: { emoji: "✨", color: "#64748b" },
+};
+
+const METHOD: MethodContent = {
+  intro:
+    "Naturwunder sind in OpenStreetMap über viele einzelne Tags verstreut. Wir sammeln sie erstmals gebündelt auf einer Karte und reichern die bekanntesten mit Wikipedia-Wissen, freien Fotos und einer KI-Einordnung an.",
+  sources: [
+    "OpenStreetMap (Overpass API) — Wasserfälle, Höhlen, Quellen, Felsentore, Naturdenkmäler im Umkreis von 20 km",
+    "Wikipedia (REST-API) — Kurzbeschreibung, freies Foto und Quell-Link, sofern verknüpft",
+    "FOSSGIS-Valhalla — fußläufige Route vom Suchort zum Spot",
+  ],
+  steps: [
+    "Wir suchen alle Natur-Highlights im Umkreis aus OpenStreetMap.",
+    "Benannte und über Wikipedia/Wikidata belegte Wunder ranken wir nach oben — die zeigen wir zuerst.",
+    "Für die Top-Spots holen wir Wikipedia-Text + freies Foto und lassen eine KI in einem Satz einordnen, warum sich der Ort lohnt.",
+    "Auf Wunsch berechnen wir die Route direkt auf der Karte.",
+  ],
+  scoring: [
+    "Die KI-Einordnung basiert ausschließlich auf den echten Wikipedia-/OSM-Fakten des jeweiligen Spots — ohne diese Fakten bleibt sie leer (keine erfundenen Angaben).",
+    "Fotos stammen nur aus offenen Quellen (Wikipedia/Wikimedia Commons); die Quelle ist verlinkt.",
+  ],
+  limits: [
+    "Unbenannte oder in OSM nicht verknüpfte Naturphänomene erscheinen ohne Text/Foto — sie sind trotzdem real.",
+    "Die Datendichte schwankt je Region stark; in gut gepflegten Gebieten ist das Ergebnis reicher.",
+  ],
 };
 
 export default function Naturwunder() {
@@ -48,21 +72,29 @@ export default function Naturwunder() {
   }
 
   const types = useMemo(() => Array.from(new Set(result?.wonders.map((w) => w.type) ?? [])), [result]);
-  const shown = useMemo(
-    () => (result ? result.wonders.filter((w) => active.length === 0 || active.includes(w.type)) : []),
-    [result, active]
-  );
-  const pois = useMemo<FeatureCollection | null>(() => {
-    if (!result) return null;
-    return {
-      type: "FeatureCollection",
-      features: shown.map((w) => ({
-        type: "Feature",
-        properties: { cat: "wonder", name: w.name, sub: `${w.type} · ${w.distance_km} km`, color: TYPE_META[w.type]?.color ?? "#64748b" },
-        geometry: { type: "Point", coordinates: [w.lng, w.lat] },
-      })),
-    };
-  }, [shown, result]);
+  const pois = useMemo<RichPoi[]>(() => {
+    if (!result) return [];
+    return result.wonders
+      .filter((w) => active.length === 0 || active.includes(w.type))
+      .map((w) => ({
+        id: w.id,
+        name: w.name,
+        lat: w.lat,
+        lng: w.lng,
+        emoji: TYPE_META[w.type]?.emoji ?? "✨",
+        color: TYPE_META[w.type]?.color ?? "#64748b",
+        category_label: w.type,
+        distance_km: w.distance_km,
+        description: w.description,
+        ai_why: w.ai_why,
+        image: w.image,
+        wiki_url: w.wiki_url,
+        open_now: w.open_now,
+        website: w.website,
+        phone: w.phone,
+        wheelchair: w.wheelchair,
+      }));
+  }, [result, active]);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
@@ -71,7 +103,7 @@ export default function Naturwunder() {
         <h1 className="mb-3 text-3xl font-bold text-brand sm:text-4xl">Die Naturwunder deiner Region</h1>
         <p className="mx-auto max-w-2xl text-slate-600">
           Wasserfälle, Höhlen, Quellen, Felsentore und Naturdenkmäler — verstreut in OpenStreetMap,
-          hier erstmals gesammelt auf einer Karte.
+          hier gesammelt auf einer Karte, mit Wikipedia-Wissen, Fotos und Route.
         </p>
       </header>
 
@@ -87,11 +119,17 @@ export default function Naturwunder() {
         {startError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-bad">{startError}</p>}
       </form>
 
-      {status === "running" && <RunningBox text="Naturwunder werden gesucht … (5–25 Sekunden)" />}
+      {status === "running" && <RunningBox text="Naturwunder werden gesucht & mit Wikipedia angereichert … (10–40 Sekunden)" />}
       {(status === "error" || status === "timeout" || status === "not_found") && <ErrorBox message={errorMessage} />}
 
       {status === "done" && result && (
-        <section className="space-y-5">
+        <RichResults
+          center={result.center}
+          pois={pois}
+          method={METHOD}
+          mailSubject="Naturwunder-Finder für unsere Region"
+          routeMode="foot"
+        >
           <div className="flex flex-wrap gap-2">
             {types.map((t) => {
               const on = active.length === 0 || active.includes(t);
@@ -105,23 +143,7 @@ export default function Naturwunder() {
               );
             })}
           </div>
-          <IsoMapDynamic
-            center={[result.center.lng, result.center.lat]}
-            zones={[]}
-            pois={pois}
-            markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
-            heightClass="h-[440px]"
-          />
-          <PoiList
-            items={shown.map((w) => ({
-              id: w.id,
-              name: `${TYPE_META[w.type]?.emoji ?? "✨"} ${w.name}`,
-              sub: w.type,
-              right: `${w.distance_km} km`,
-            }))}
-            emptyText="Keine Naturwunder in dieser Auswahl."
-          />
-        </section>
+        </RichResults>
       )}
     </main>
   );

@@ -3,9 +3,38 @@
 import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
 import { usePolling } from "@/lib/usePolling";
 import type { FeatureCollection, GeocodeHit, LadenErlebenResult } from "@/lib/types";
+
+const METHOD: MethodContent = {
+  intro:
+    "Ladezeit ist keine Totzeit. Das Tool zeigt Ladesäulen und — im 600-m-Fußradius — was man während der Ladepause erleben kann: Café, Museum, Aussicht, Altstadt.",
+  sources: [
+    "OpenStreetMap (Overpass API) — Ladestationen (mit Stecker/Leistung) + Erlebnis-POIs im Umkreis von 8 km",
+    "OSM-Tags — Steckertypen, maximale Ladeleistung (kW), Betreiber",
+  ],
+  steps: [
+    "Wir laden alle Ladesäulen und Erlebnis-POIs der Umgebung.",
+    "Je Säule ermitteln wir, was in 600 m Fußweg liegt (Café, Museum, Aussicht …).",
+    "Wir bewerten die Steckertypen/Leistung und markieren Schnelllader.",
+    "Ranking nach „schönste Ladepause\" (viele Erlebnisse + Schnelllade-Bonus).",
+  ],
+  scoring: [
+    "Schnelllader = CCS/CHAdeMO-Stecker oder ≥ 50 kW.",
+    "Ranking bevorzugt Säulen mit vielen Erlebnissen im Fußradius.",
+  ],
+  limits: [
+    "Ladeleistung/Verfügbarkeit ist OSM-Stand; eine Säule kann belegt oder defekt sein.",
+    "Nur öffentlich getaggte POIs erscheinen als „Erlebnis\".",
+  ],
+};
+
+function gmaps(lat: number, lng: number) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
 
 export default function LadenErleben() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
@@ -103,9 +132,17 @@ export default function LadenErleben() {
                 ) : (
                   <p className="mt-1 text-xs text-slate-400">Keine Erlebnisse im 600-m-Fußradius.</p>
                 )}
+                <div className="mt-2 text-sm">
+                  <a href={gmaps(s.lat, s.lng)} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-brand-accent">
+                    Route zur Säule ↗
+                  </a>
+                </div>
               </li>
             ))}
           </ul>
+
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Laden-&-Erleben für unsere Region" />
         </section>
       )}
     </main>

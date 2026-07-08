@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
 import OptionPills from "@/components/OptionPills";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
 import { usePolling } from "@/lib/usePolling";
 import type { FeatureCollection, GeocodeHit, RuheResult } from "@/lib/types";
@@ -11,6 +13,29 @@ import type { FeatureCollection, GeocodeHit, RuheResult } from "@/lib/types";
 function scoreColor(s: number) {
   return s >= 75 ? "#16a34a" : s >= 50 ? "#eab308" : "#f97316";
 }
+
+const METHOD: MethodContent = {
+  intro:
+    "„Quiet Travel\" ist ein Wellness-Trend. Der Ruhe-Finder berechnet aus der Distanz zu Lärmquellen, welche Natur-Orte in der Region am ruhigsten sind.",
+  sources: [
+    "OpenStreetMap (Overpass API) — Natur-Orte (Gipfel, Aussicht, Park, Wald, Schutzgebiete) als Ruhe-Kandidaten",
+    "OpenStreetMap — Lärmquellen: große Straßen, Bahnstrecken, Industrie, Städte, Flugplätze",
+  ],
+  steps: [
+    "Wir sammeln Natur-Orte und Lärmquellen im gewählten Umkreis.",
+    "Für jeden Ort berechnen wir die Luftlinien-Distanz zur nächsten Lärmquelle.",
+    "Daraus ergibt sich ein Ruhe-Score von 0–100.",
+    "Wir zeigen die 15 ruhigsten Plätze.",
+  ],
+  scoring: [
+    "Ruhe-Score = Distanz zur nächsten Lärmquelle, gedeckelt bei 4 km (≥ 4 km = 100).",
+    "🟢 ≥ 75 sehr ruhig · 🟡 ≥ 50 ruhig · 🟠 darunter mäßig ruhig.",
+  ],
+  limits: [
+    "Grundlage ist die Nähe zu Lärmquellen, keine echte Schallmessung — lokale Faktoren (Wind, Topografie) fehlen.",
+    "Temporärer Lärm (Baustellen, Events) ist nicht erfasst.",
+  ],
+};
 
 export default function RuheFinder() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
@@ -105,6 +130,8 @@ export default function RuheFinder() {
               </li>
             ))}
           </ol>
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Ruhe-Finder für unsere Region" />
         </section>
       )}
     </main>

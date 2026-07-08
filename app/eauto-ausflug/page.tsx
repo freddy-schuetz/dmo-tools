@@ -2,12 +2,36 @@
 
 import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
-import IsoMapDynamic from "@/components/IsoMapDynamic";
 import OptionPills from "@/components/OptionPills";
-import PoiList from "@/components/PoiList";
+import RichResults from "@/components/RichResults";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
+import type { MethodContent } from "@/components/MethodBox";
 import { usePolling } from "@/lib/usePolling";
-import type { EautoAusflugResult, FeatureCollection, GeocodeHit } from "@/lib/types";
+import type { EautoAusflugResult, GeocodeHit, RichPoi } from "@/lib/types";
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Check nimmt E-Auto-Gästen die Reichweiten-Angst: Er zeigt nur Ausflugsziele, die mit einer Ladung reichweiten-sicher hin und zurück erreichbar sind UND vor Ort eine Ladesäule haben.",
+  sources: [
+    "OpenStreetMap (Overpass API) — Ausflugsziele (Attraktionen, Museen, Burgen, Gipfel …) + Ladestationen",
+    "FOSSGIS-Valhalla (Matrix) — reale Auto-Fahrzeit und -distanz vom Standort zu jedem Ziel",
+    "Wikipedia — Foto/Text der Ziele · OSM-Tags — Öffnungszeiten/Website",
+  ],
+  steps: [
+    "Wir suchen Ausflugsziele in fahrbarer Entfernung, die eine Ladesäule ≤ 2 km entfernt haben.",
+    "Valhalla berechnet die echte Fahrstrecke; nur reichweiten-sichere Ziele (hin + zurück) bleiben übrig.",
+    "Die Ziele reichern wir mit Wikipedia-Foto/Text und Öffnungszeiten an.",
+    "Route zum Ziel auf Wunsch direkt auf der Karte (Auto).",
+  ],
+  scoring: [
+    "„reichweiten-sicher\" = Hin- und Rückfahrt (2 × Fahrdistanz) liegen innerhalb der gewählten Reichweite.",
+    "Nur Ziele mit Ladesäule in ≤ 2 km werden gezeigt — Laden vor Ort ist garantiert eingeplant.",
+  ],
+  limits: [
+    "Reale Reichweite hängt von Fahrweise, Wetter und Fahrzeug ab — wir rechnen bewusst konservativ.",
+    "Ladesäulen-Verfügbarkeit/-Leistung ist OSM-Stand; eine Säule kann belegt oder defekt sein.",
+  ],
+};
 
 export default function EautoAusflug() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
@@ -35,16 +59,25 @@ export default function EautoAusflug() {
     }
   }
 
-  const pois = useMemo<FeatureCollection | null>(() => {
-    if (!result) return null;
-    return {
-      type: "FeatureCollection",
-      features: result.trips.map((t) => ({
-        type: "Feature",
-        properties: { cat: "trip", name: t.name, sub: `${t.drive_min} Min · Laden vor Ort`, color: "#9333ea" },
-        geometry: { type: "Point", coordinates: [t.lng, t.lat] },
-      })),
-    };
+  const pois = useMemo<RichPoi[]>(() => {
+    if (!result) return [];
+    return result.trips.map((t) => ({
+      id: t.id ?? t.name + t.lat,
+      name: t.name,
+      lat: t.lat,
+      lng: t.lng,
+      emoji: "🚗",
+      color: "#9333ea",
+      category_label: `${t.distance_km} km Fahrt`,
+      meta_right: `${t.drive_min} Min`,
+      description: t.description,
+      image: t.image,
+      wiki_url: t.wiki_url,
+      website: t.website,
+      open_now: t.open_now,
+      wheelchair: t.wheelchair,
+      badges: [`⚡ Laden vor Ort${t.charger.max_kw ? ` · ${t.charger.max_kw} kW` : ""}`],
+    }));
   }, [result]);
 
   return (
@@ -81,31 +114,21 @@ export default function EautoAusflug() {
         {startError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-bad">{startError}</p>}
       </form>
 
-      {status === "running" && <RunningBox text="Reichweiten-sichere Ziele werden berechnet … (10–50 Sekunden)" />}
+      {status === "running" && <RunningBox text="Reichweiten-sichere Ziele werden berechnet & angereichert … (15–50 Sekunden)" />}
       {(status === "error" || status === "timeout" || status === "not_found") && <ErrorBox message={errorMessage} />}
 
       {status === "done" && result && (
-        <section className="space-y-5">
+        <RichResults
+          center={result.center}
+          pois={pois}
+          method={METHOD}
+          mailSubject="E-Auto-Tagesausflug-Check für unsere Region"
+          routeMode="car"
+        >
           <p className="text-sm text-slate-600">
             <strong>{result.trips.length}</strong> Ausflugsziele in Reichweite ({result.range_km} km) mit Lademöglichkeit vor Ort.
           </p>
-          <IsoMapDynamic
-            center={[result.center.lng, result.center.lat]}
-            zones={[]}
-            pois={pois}
-            markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
-            heightClass="h-[440px]"
-          />
-          <PoiList
-            items={result.trips.map((t) => ({
-              id: t.name + t.lat,
-              name: t.name,
-              sub: `🚗 ${t.drive_min} Min · ${t.distance_km} km · ⚡ ${t.charger.name}${t.charger.max_kw ? ` (${t.charger.max_kw} kW)` : ""}`,
-              right: `${t.drive_min} Min`,
-            }))}
-            emptyText="Keine passenden Ziele gefunden."
-          />
-        </section>
+        </RichResults>
       )}
     </main>
   );

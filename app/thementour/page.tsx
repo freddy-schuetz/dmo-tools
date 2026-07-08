@@ -4,9 +4,12 @@ import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
 import OptionPills from "@/components/OptionPills";
+import PoiCard from "@/components/PoiCard";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
 import { usePolling } from "@/lib/usePolling";
-import type { Feature, FeatureCollection, GeocodeHit, ThementourResult } from "@/lib/types";
+import type { Feature, FeatureCollection, GeocodeHit, RichPoi, ThementourResult } from "@/lib/types";
 import type { LineLayer } from "@/components/IsoMap";
 
 const THEMES = [
@@ -20,6 +23,26 @@ const LENGTHS = [
   { value: "mittel", label: "mittel" },
   { value: "lang", label: "lang" },
 ];
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Generator stellt aus passenden Orten deiner Wahl automatisch eine fußläufige Rundtour zusammen — inklusive echter Wegführung und angereicherter Stopps. Fertiger Content für DMO-Websites.",
+  sources: [
+    "OpenStreetMap (Overpass API) — themenpassende Orte (Kultur/Genuss/Natur/Familie) rund um den Startpunkt",
+    "FOSSGIS-Valhalla — reale Fußweg-Route als Rundtour (Start → Stopps → Start)",
+    "Wikipedia — Kurztext/Foto der Stopps · OSM-Tags — Öffnungszeiten/Website",
+  ],
+  steps: [
+    "Wir suchen themenpassende Orte im Umkreis des Startpunkts.",
+    "Per Nearest-Neighbor bringen wir sie in eine sinnvolle Reihenfolge.",
+    "Valhalla berechnet die reale Fußweg-Rundtour; die Stopps reichern wir mit Wikipedia + Öffnungszeiten an.",
+    "Das Ergebnis lässt sich 1:1 als Tour-Vorschlag übernehmen.",
+  ],
+  limits: [
+    "Die Reihenfolge ist heuristisch (Nearest-Neighbor), nicht die mathematisch kürzeste Route.",
+    "Die Tour verbindet vorhandene OSM-Orte — sie ersetzt keine kuratierte, redaktionelle Tour.",
+  ],
+};
 
 export default function Thementour() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
@@ -65,6 +88,24 @@ export default function Thementour() {
     };
   }, [result]);
 
+  const stopPois = useMemo<RichPoi[]>(() => {
+    if (!result) return [];
+    return result.stops.map((s) => ({
+      id: s.id ?? String(s.order),
+      name: s.name,
+      lat: s.lat,
+      lng: s.lng,
+      emoji: `${s.order}.`,
+      color: "#9333ea",
+      description: s.description,
+      image: s.image,
+      wiki_url: s.wiki_url,
+      website: s.website,
+      open_now: s.open_now,
+      wheelchair: s.wheelchair,
+    }));
+  }, [result]);
+
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
       <header className="mb-8 text-center">
@@ -98,7 +139,7 @@ export default function Thementour() {
         {startError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-bad">{startError}</p>}
       </form>
 
-      {status === "running" && <RunningBox text="Passende Orte werden verbunden und geroutet … (10–40 Sekunden)" />}
+      {status === "running" && <RunningBox text="Passende Orte werden verbunden, geroutet und angereichert … (15–45 Sekunden)" />}
       {(status === "error" || status === "timeout" || status === "not_found") && <ErrorBox message={errorMessage} />}
 
       {status === "done" && result && (
@@ -116,15 +157,13 @@ export default function Thementour() {
             markers={[{ lat: result.start.lat, lng: result.start.lng, color: "#1e3a5f" }]}
             heightClass="h-[460px]"
           />
-          <ol className="space-y-2">
-            {result.stops.map((s) => (
-              <li key={s.order} className="flex items-center gap-3 rounded-xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-slate-200">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-white">{s.order}</span>
-                <span className="text-sm font-medium">{s.name}</span>
-                {s.has_wiki && <span className="ml-auto text-xs text-brand-accent">Wikipedia ✓</span>}
-              </li>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {stopPois.map((p) => (
+              <PoiCard key={p.id} poi={p} origin={result.start} />
             ))}
-          </ol>
+          </div>
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Thementouren-Generator für unsere Region" />
         </section>
       )}
     </main>

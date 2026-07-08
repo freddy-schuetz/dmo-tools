@@ -2,18 +2,43 @@
 
 import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
-import IsoMapDynamic from "@/components/IsoMapDynamic";
 import OptionPills from "@/components/OptionPills";
-import PoiList from "@/components/PoiList";
+import RichResults from "@/components/RichResults";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
+import type { MethodContent } from "@/components/MethodBox";
 import { usePolling } from "@/lib/usePolling";
-import type { FeatureCollection, GeocodeHit, WildtierResult } from "@/lib/types";
+import type { GeocodeHit, RichPoi, WildtierResult } from "@/lib/types";
 
 const TYPE_META: Record<string, { emoji: string; color: string }> = {
   "Beobachtungshütte": { emoji: "🦅", color: "#d97706" },
   Schutzgebiet: { emoji: "🌿", color: "#16a34a" },
   "Feuchtgebiet/Moor": { emoji: "🦆", color: "#0891b2" },
   Naturbeobachtung: { emoji: "🔭", color: "#64748b" },
+};
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Radar zeigt, WO man in der Region Natur und Tiere beobachten kann — und, dank echter GBIF-Sichtungsdaten, WELCHE Arten dort tatsächlich schon dokumentiert wurden.",
+  sources: [
+    "OpenStreetMap (Overpass API) — Beobachtungshütten, Naturschutzgebiete, Feuchtgebiete/Moore im Umkreis",
+    "GBIF (Global Biodiversity Information Facility) — dokumentierte Tier-Sichtungen (Region + Top-Spots)",
+    "Wikipedia — Beschreibung/Foto der Gebiete · KI — Einordnung · Valhalla — Route",
+  ],
+  steps: [
+    "Wir suchen alle Beobachtungsorte im Umkreis aus OpenStreetMap.",
+    "Über GBIF fragen wir ab, welche Tierarten in der Region (und an den Top-Spots) bereits dokumentiert wurden.",
+    "Die Top-Spots reichern wir mit Wikipedia-Text/Foto an; eine KI ordnet faktenbasiert ein, warum sich der Ort eignet.",
+    "Route zum Beobachtungsort auf Wunsch direkt auf der Karte.",
+  ],
+  scoring: [
+    "„Dokumentierte Arten\" sind reale, von Menschen gemeldete GBIF-Beobachtungen — eine Sichtung ist damit möglich, aber nie garantiert.",
+    "Beobachtungshütten stehen oben, da sie am zuverlässigsten Tierbeobachtung ermöglichen.",
+  ],
+  limits: [
+    "GBIF-Daten sind meldungsabhängig: gut besuchte Gebiete wirken artenreicher, weil dort mehr gemeldet wird.",
+    "Deutsche Artnamen fehlen manchmal — dann zeigen wir den wissenschaftlichen Namen.",
+    "Wildtiere sind wild: bitte Schutzgebiete und Ruhezonen respektieren.",
+  ],
 };
 
 export default function Wildtier() {
@@ -45,21 +70,29 @@ export default function Wildtier() {
   }
 
   const types = useMemo(() => Array.from(new Set(result?.spots.map((s) => s.type) ?? [])), [result]);
-  const shown = useMemo(
-    () => (result ? result.spots.filter((s) => active.length === 0 || active.includes(s.type)) : []),
-    [result, active]
-  );
-  const pois = useMemo<FeatureCollection | null>(() => {
-    if (!result) return null;
-    return {
-      type: "FeatureCollection",
-      features: shown.map((s) => ({
-        type: "Feature",
-        properties: { cat: "wild", name: s.name, sub: `${s.type} · ${s.distance_km} km`, color: TYPE_META[s.type]?.color ?? "#64748b" },
-        geometry: { type: "Point", coordinates: [s.lng, s.lat] },
-      })),
-    };
-  }, [shown, result]);
+  const pois = useMemo<RichPoi[]>(() => {
+    if (!result) return [];
+    return result.spots
+      .filter((s) => active.length === 0 || active.includes(s.type))
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        lat: s.lat,
+        lng: s.lng,
+        emoji: TYPE_META[s.type]?.emoji ?? "🔭",
+        color: TYPE_META[s.type]?.color ?? "#64748b",
+        category_label: s.type,
+        distance_km: s.distance_km,
+        description: s.description,
+        ai_why: s.ai_why,
+        image: s.image,
+        wiki_url: s.wiki_url,
+        website: s.website,
+        wheelchair: s.wheelchair,
+        species: s.species,
+        badges: s.protected ? ["Schutzgebiet"] : undefined,
+      }));
+  }, [result, active]);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
@@ -67,8 +100,8 @@ export default function Wildtier() {
         <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-brand-accent">Wildtier-Beobachtung</p>
         <h1 className="mb-3 text-3xl font-bold text-brand sm:text-4xl">Natur &amp; Tiere beobachten</h1>
         <p className="mx-auto max-w-2xl text-slate-600">
-          Beobachtungshütten, Naturschutzgebiete und Feuchtgebiete rund um deinen Ort — für
-          Naturliebhaber und nachhaltigen Öko-Tourismus.
+          Beobachtungshütten, Naturschutzgebiete und Feuchtgebiete — plus echte Sichtungsdaten (GBIF):
+          welche Arten hier tatsächlich dokumentiert sind.
         </p>
       </header>
 
@@ -90,11 +123,30 @@ export default function Wildtier() {
         {startError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-bad">{startError}</p>}
       </form>
 
-      {status === "running" && <RunningBox text="Beobachtungsorte werden gesucht … (5–25 Sekunden)" />}
+      {status === "running" && <RunningBox text="Beobachtungsorte + GBIF-Sichtungen werden geladen … (15–45 Sekunden)" />}
       {(status === "error" || status === "timeout" || status === "not_found") && <ErrorBox message={errorMessage} />}
 
       {status === "done" && result && (
-        <section className="space-y-5">
+        <RichResults
+          center={result.center}
+          pois={pois}
+          method={METHOD}
+          mailSubject="Wildtier-Beobachtungs-Radar für unsere Region"
+          routeMode="foot"
+        >
+          {result.region_species && result.region_species.length > 0 && (
+            <div className="rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-200">
+              <h2 className="mb-2 font-bold text-emerald-800">🐾 In dieser Region dokumentiert (GBIF)</h2>
+              <div className="flex flex-wrap gap-1.5">
+                {result.region_species.map((s) => (
+                  <span key={s.name_de} className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+                    {s.name_de} <span className="text-emerald-400">· {s.count}</span>
+                  </span>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-emerald-600">Anzahl = gemeldete Beobachtungen. Sichtung möglich, nie garantiert.</p>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             {types.map((t) => {
               const on = active.length === 0 || active.includes(t);
@@ -108,23 +160,7 @@ export default function Wildtier() {
               );
             })}
           </div>
-          <IsoMapDynamic
-            center={[result.center.lng, result.center.lat]}
-            zones={[]}
-            pois={pois}
-            markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
-            heightClass="h-[440px]"
-          />
-          <PoiList
-            items={shown.map((s) => ({
-              id: s.id,
-              name: `${TYPE_META[s.type]?.emoji ?? "🔭"} ${s.name}`,
-              sub: s.type,
-              right: `${s.distance_km} km`,
-            }))}
-            emptyText="Keine Beobachtungsorte in dieser Auswahl."
-          />
-        </section>
+        </RichResults>
       )}
     </main>
   );

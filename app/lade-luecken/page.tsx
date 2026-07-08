@@ -3,10 +3,39 @@
 import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
+import AuditScore from "@/components/AuditScore";
+import Card from "@/components/Card";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import OptionPills from "@/components/OptionPills";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
 import { usePolling } from "@/lib/usePolling";
 import type { FeatureCollection, GeocodeHit, LadeLueckenResult } from "@/lib/types";
+
+const METHOD: MethodContent = {
+  intro:
+    "Immer mehr Gäste reisen mit dem E-Auto an. Der Radar zeigt, wie flächendeckend deine Region mit Ladeinfrastruktur versorgt ist — und wo „Lade-Wüsten“ die Anreise erschweren.",
+  sources: [
+    "OpenStreetMap (Overpass API) — alle Ladestationen (amenity=charging_station) im gewählten Radius",
+    "Nominatim — Geokodierung der Region",
+  ],
+  steps: [
+    "Wir laden alle Ladestationen der Region aus OpenStreetMap.",
+    "Die Region wird in ein Raster aus 2–3 km-Zellen zerlegt.",
+    "Für jede Zelle berechnen wir die Luftlinien-Distanz zur nächstgelegenen Ladesäule.",
+    "Zellen, die weiter als 5 km entfernt sind, markieren wir als Lade-Lücke (rot).",
+  ],
+  scoring: [
+    "Die E-Auto-Readiness ist der Anteil der Fläche innerhalb von 5 km zu einer Ladesäule (100 − Lücken-Anteil).",
+    "≥ 70 = gut versorgt · 40–69 = teils Lücken · < 40 = viele Lade-Wüsten.",
+    "Auf der Karte: rot = Lücke (> 5 km), grün = versorgt, blau = Ladestation.",
+  ],
+  limits: [
+    "Grundlage ist die Luftlinie, nicht die tatsächliche Fahrstrecke — im Gebirge sind reale Wege länger.",
+    "Ladeleistung und Verfügbarkeit fließen nicht ein; eine gemeldete Säule kann langsam oder defekt sein.",
+    "Nur in OSM erfasste Stationen zählen — brandneue Standorte fehlen evtl. noch.",
+  ],
+};
 
 export default function LadeLuecken() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
@@ -54,6 +83,8 @@ export default function LadeLuecken() {
     return { type: "FeatureCollection", features: [...cells, ...chargers] };
   }, [result]);
 
+  const readiness = result ? Math.max(0, 100 - result.summary.gap_pct) : 0;
+
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
       <header className="mb-8 text-center">
@@ -92,34 +123,46 @@ export default function LadeLuecken() {
       {(status === "error" || status === "timeout" || status === "not_found") && <ErrorBox message={errorMessage} />}
 
       {status === "done" && result && (
-        <section className="space-y-5">
+        <section className="space-y-6">
+          <AuditScore
+            score={readiness}
+            title={`E-Auto-Readiness · ${result.address_resolved} (${result.radius_km} km)`}
+            subtitle={`${result.summary.charger_count} Ladestationen · größte Lücke ${result.summary.worst_dist_km} km`}
+            labels={{ good: "Gut versorgt", mid: "Teils Lücken", bad: "Viele Lade-Wüsten" }}
+          />
+
           <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl bg-white p-5 text-center shadow-sm ring-1 ring-slate-200">
+            <Card className="text-center">
               <p className="text-3xl font-bold text-brand">{result.summary.charger_count}</p>
               <p className="text-sm text-slate-500">Ladestationen</p>
-            </div>
-            <div className="rounded-2xl bg-white p-5 text-center shadow-sm ring-1 ring-slate-200">
+            </Card>
+            <Card className="text-center">
               <p className={`text-3xl font-bold ${result.summary.gap_pct > 25 ? "text-bad" : result.summary.gap_pct > 10 ? "text-warn" : "text-ok"}`}>
                 {result.summary.gap_pct}%
               </p>
               <p className="text-sm text-slate-500">der Fläche &gt; 5 km entfernt</p>
-            </div>
-            <div className="rounded-2xl bg-white p-5 text-center shadow-sm ring-1 ring-slate-200">
+            </Card>
+            <Card className="text-center">
               <p className="text-3xl font-bold text-brand">{result.summary.worst_dist_km} km</p>
               <p className="text-sm text-slate-500">größte Lücke</p>
-            </div>
+            </Card>
           </div>
 
-          <IsoMapDynamic
-            center={[result.center.lng, result.center.lat]}
-            zones={[]}
-            pois={pois}
-            markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#0ea5e9" }]}
-            heightClass="h-[480px]"
-          />
-          <p className="-mt-4 text-center text-xs text-slate-500">
-            🟥 Lade-Lücke (&gt; 5 km) · 🟩 versorgt · 🔵 Ladestation · hellblau: Zentrum
-          </p>
+          <Card className="!p-0 overflow-hidden">
+            <IsoMapDynamic
+              center={[result.center.lng, result.center.lat]}
+              zones={[]}
+              pois={pois}
+              markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#0ea5e9" }]}
+              heightClass="h-[480px]"
+            />
+            <p className="px-6 py-3 text-center text-xs text-slate-500">
+              🟥 Lade-Lücke (&gt; 5 km) · 🟩 versorgt · 🔵 Ladestation · hellblau: Zentrum
+            </p>
+          </Card>
+
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Lade-Lücken-Radar für unsere Region" />
         </section>
       )}
     </main>

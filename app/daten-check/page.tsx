@@ -3,11 +3,39 @@
 import { useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
-import ScoreGauge from "@/components/ScoreGauge";
+import AuditScore from "@/components/AuditScore";
+import Card from "@/components/Card";
+import MethodBox, { type MethodContent } from "@/components/MethodBox";
+import AboutSection from "@/components/AboutSection";
 import OptionPills from "@/components/OptionPills";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
 import { usePolling } from "@/lib/usePolling";
 import type { DatencheckResult, GeocodeHit } from "@/lib/types";
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Datencheck misst, wie vollständig die touristischen Betriebe deiner Region in OpenStreetMap (OSM) erfasst sind — der Datenbasis, die Komoot, Outdooractive, Apple Karten, Bing und zunehmend KI-Assistenten speist.",
+  sources: [
+    "OpenStreetMap (Overpass API) — alle besetzten Tourismus-POIs im gewählten Radius (Unterkünfte, Gastronomie, Sehenswürdigkeiten, historische Orte, Camping, Tourist-Infos)",
+    "Nominatim — Geokodierung der eingegebenen Region",
+  ],
+  steps: [
+    "Wir laden alle Tourismus-Betriebe im Radius aus OpenStreetMap.",
+    "Je Betrieb prüfen wir 6 gästerelevante Merkmale: Öffnungszeiten, Website, Telefon, Barrierefrei-Angabe, Foto und Adresse.",
+    "Aus den Füllraten berechnen wir einen gewichteten Daten-Score von 0–100.",
+    "Die größten Lücken bereiten wir als konkrete Quick Wins mit Beispiel-Betrieben auf.",
+  ],
+  scoring: [
+    "Öffnungszeiten und Website zählen je 25 Punkte (für Gäste am wichtigsten), Telefon und Barrierefrei-Angabe je 15, Foto und Adresse je 10.",
+    "Score ≥ 70 = sehr gut erfasst · 40–69 = ausbaufähig · < 40 = große Lücken.",
+    "Auf der Karte: grün = mindestens 4 von 6 Angaben vorhanden, rot = lückenhaft.",
+  ],
+  limits: [
+    "Bewertet wird die Daten­qualität in OSM, nicht die Qualität der Betriebe selbst — ein Haus kann exzellent sein und in OSM trotzdem fehlen.",
+    "Nur öffentlich getaggte Betriebe erscheinen; sehr kleine oder neue fehlen evtl. ganz.",
+    "OSM lebt von Freiwilligen — der Check ist eine Momentaufnahme und kein amtliches Register.",
+  ],
+};
 
 export default function DatenCheck() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
@@ -104,19 +132,24 @@ export default function DatenCheck() {
 
       {status === "done" && result && (
         <section className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ScoreGauge value={result.score} title={`Daten-Score · ${result.address_resolved} (${result.radius_km} km)`} />
-            <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-              <p className="mb-2 text-sm font-medium text-slate-500">Analysiert</p>
-              <p className="text-2xl font-bold text-brand">{result.poi_total} Betriebe</p>
-              <p className="mt-1 text-xs text-slate-500">
-                {result.categories.map((c) => `${c.label}: ${c.count}`).join(" · ")}
-              </p>
-            </div>
-          </div>
+          <AuditScore
+            score={result.score}
+            title={`Daten-Score · ${result.address_resolved} (${result.radius_km} km)`}
+            subtitle={`${result.poi_total} Tourismus-Betriebe analysiert`}
+            labels={{ good: "Sehr gut erfasst", mid: "Ausbaufähig", bad: "Große Lücken" }}
+          />
 
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <h2 className="mb-4 text-lg font-bold text-brand">Datenqualität je Merkmal</h2>
+          <Card>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-bold text-brand">Datenqualität je Merkmal</h2>
+              <div className="flex flex-wrap gap-1.5">
+                {result.categories.map((c) => (
+                  <span key={c.key} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                    {c.label}: {c.count}
+                  </span>
+                ))}
+              </div>
+            </div>
             <ul className="space-y-3">
               {result.attributes.map((a) => (
                 <li key={a.key}>
@@ -133,7 +166,7 @@ export default function DatenCheck() {
                 </li>
               ))}
             </ul>
-          </div>
+          </Card>
 
           {result.quick_wins.length > 0 && (
             <div className="rounded-2xl bg-amber-50 p-6 ring-1 ring-amber-200">
@@ -149,18 +182,20 @@ export default function DatenCheck() {
             </div>
           )}
 
-          <IsoMapDynamic
-            center={[result.center.lng, result.center.lat]}
-            zones={[]}
-            pois={result.map_samples}
-            markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
-            heightClass="h-[420px]"
-          />
-          <p className="-mt-4 text-center text-xs text-slate-500">
-            Grün = gut erfasst (≥ 4 von 6 Angaben) · Rot = lückenhaft · anklickbar
-          </p>
+          <Card className="!p-0 overflow-hidden">
+            <IsoMapDynamic
+              center={[result.center.lng, result.center.lat]}
+              zones={[]}
+              pois={result.map_samples}
+              markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
+              heightClass="h-[420px]"
+            />
+            <p className="px-6 py-3 text-center text-xs text-slate-500">
+              Grün = gut erfasst (≥ 4 von 6 Angaben) · Rot = lückenhaft · Punkte anklickbar
+            </p>
+          </Card>
 
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <Card>
             <h2 className="mb-2 text-lg font-bold text-brand">Report als PDF</h2>
             <p className="mb-4 text-sm text-slate-600">Vollständige Auswertung als PDF — herunterladen oder per E-Mail.</p>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -187,7 +222,10 @@ export default function DatenCheck() {
               <p className="mt-3 text-sm"><a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-accent underline">📄 PDF herunterladen</a> <span className="text-slate-500">(Link 1 Stunde gültig)</span></p>
             )}
             {reportState === "error" && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-bad">PDF konnte nicht erstellt werden.</p>}
-          </div>
+          </Card>
+
+          <MethodBox content={METHOD} />
+          <AboutSection mailSubject="Destinations-Datencheck für unsere Region" />
         </section>
       )}
     </main>

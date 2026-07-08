@@ -2,11 +2,35 @@
 
 import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
-import IsoMapDynamic from "@/components/IsoMapDynamic";
-import PoiList from "@/components/PoiList";
+import RichResults from "@/components/RichResults";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
+import type { MethodContent } from "@/components/MethodBox";
 import { usePolling } from "@/lib/usePolling";
-import type { FeatureCollection, GeocodeHit, GoldenHourResult } from "@/lib/types";
+import type { GeocodeHit, GoldenHourResult, RichPoi } from "@/lib/types";
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Finder verbindet Aussichtspunkte aus OpenStreetMap mit dem heutigen Sonnenstand — und hebt Spots hervor, deren Blickrichtung zum Sonnenuntergang passt. Die bekanntesten reichern wir mit Wikipedia-Wissen und Foto an.",
+  sources: [
+    "OpenStreetMap (Overpass API) — Aussichtspunkte, Gipfel und Aussichtstürme im Umkreis von 15 km",
+    "Sonnenstand — im Browser bzw. Workflow berechnet (SunCalc-Verfahren, kein externer Dienst)",
+    "Open-Meteo — aktuelle Bewölkung · Wikipedia — Kurztext + freies Foto · Valhalla — Route",
+  ],
+  steps: [
+    "Wir berechnen Sonnenuntergang, Sonnenaufgang und den Sonnenuntergangs-Azimut für heute.",
+    "Aus OpenStreetMap holen wir Aussichtspunkte und prüfen, ob ihre erfasste Blickrichtung zum Sonnenuntergang passt.",
+    "Passende Spots ranken wir nach oben und reichern die Top-Spots mit Wikipedia-Text + Foto + KI-Einordnung an.",
+    "Route zum Spot auf Wunsch direkt auf der Karte.",
+  ],
+  scoring: [
+    "„Blick Richtung Sonnenuntergang\" = die in OSM erfasste Blickrichtung liegt innerhalb von 70° zum heutigen Sonnenuntergangs-Azimut.",
+    "Die KI-Einordnung nutzt nur echte Wikipedia-/OSM-Fakten des Spots — ohne Fakten bleibt sie leer.",
+  ],
+  limits: [
+    "Nur wenige Aussichtspunkte tragen in OSM eine Blickrichtung — ohne diese Angabe kann die Sonnenuntergangs-Eignung nicht bestätigt werden.",
+    "Die Bewölkung ist eine Momentaufnahme; das Wetter kann sich bis zur goldenen Stunde ändern.",
+  ],
+};
 
 export default function GoldenHour() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
@@ -33,16 +57,25 @@ export default function GoldenHour() {
     }
   }
 
-  const pois = useMemo<FeatureCollection | null>(() => {
-    if (!result) return null;
-    return {
-      type: "FeatureCollection",
-      features: result.spots.map((s) => ({
-        type: "Feature",
-        properties: { cat: "spot", name: s.name, sub: s.faces_sunset ? "Blick Richtung Sonnenuntergang" : s.cat, color: s.faces_sunset ? "#f59e0b" : "#0ea5e9" },
-        geometry: { type: "Point", coordinates: [s.lng, s.lat] },
-      })),
-    };
+  const pois = useMemo<RichPoi[]>(() => {
+    if (!result) return [];
+    return result.spots.map((s) => ({
+      id: s.id,
+      name: s.name,
+      lat: s.lat,
+      lng: s.lng,
+      emoji: s.faces_sunset ? "🌅" : "📷",
+      color: s.faces_sunset ? "#f59e0b" : "#0ea5e9",
+      category_label: `${s.cat}${s.elevation ? ` · ${s.elevation} m` : ""}`,
+      distance_km: s.distance_km,
+      description: s.description,
+      ai_why: s.ai_why,
+      image: s.image,
+      wiki_url: s.wiki_url,
+      website: s.website,
+      wheelchair: s.wheelchair,
+      badges: s.faces_sunset ? ["Blick Richtung Sonnenuntergang"] : undefined,
+    }));
   }, [result]);
 
   const cloudLabel = (c: number | null) =>
@@ -71,11 +104,17 @@ export default function GoldenHour() {
         {startError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-bad">{startError}</p>}
       </form>
 
-      {status === "running" && <RunningBox text="Aussichtspunkte und Sonnenstand werden berechnet … (5–25 Sekunden)" />}
+      {status === "running" && <RunningBox text="Aussichtspunkte und Sonnenstand werden berechnet … (10–30 Sekunden)" />}
       {(status === "error" || status === "timeout" || status === "not_found") && <ErrorBox message={errorMessage} />}
 
       {status === "done" && result && (
-        <section className="space-y-5">
+        <RichResults
+          center={result.center}
+          pois={pois}
+          method={METHOD}
+          mailSubject="Golden-Hour-Fotospots für unsere Region"
+          routeMode="foot"
+        >
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-2xl bg-amber-50 p-5 text-center ring-1 ring-amber-200">
               <p className="text-3xl font-bold text-amber-600">🌅 {result.sunset_time ?? "—"}</p>
@@ -90,26 +129,7 @@ export default function GoldenHour() {
               <p className="text-sm text-slate-500">Sicht heute{result.cloud_cover_pct != null ? ` (${result.cloud_cover_pct}% Wolken)` : ""}</p>
             </div>
           </div>
-
-          <IsoMapDynamic
-            center={[result.center.lng, result.center.lat]}
-            zones={[]}
-            pois={pois}
-            markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
-            heightClass="h-[440px]"
-          />
-          <p className="-mt-4 text-center text-xs text-slate-500">🟠 Blick Richtung Sonnenuntergang · 🔵 weiterer Aussichtspunkt</p>
-
-          <PoiList
-            items={result.spots.map((s) => ({
-              id: s.id,
-              name: `${s.faces_sunset ? "🌅 " : ""}${s.name}`,
-              sub: `${s.cat}${s.elevation ? ` · ${s.elevation} m` : ""}${s.faces_sunset ? " · Blick Richtung Sonnenuntergang" : ""}`,
-              right: `${s.distance_km} km`,
-            }))}
-            emptyText="Keine Aussichtspunkte gefunden."
-          />
-        </section>
+        </RichResults>
       )}
     </main>
   );

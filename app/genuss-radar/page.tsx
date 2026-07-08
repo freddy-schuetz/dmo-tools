@@ -2,16 +2,36 @@
 
 import { useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
-import IsoMapDynamic from "@/components/IsoMapDynamic";
-import PoiList from "@/components/PoiList";
+import RichResults from "@/components/RichResults";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
+import type { MethodContent } from "@/components/MethodBox";
 import { usePolling } from "@/lib/usePolling";
-import type { FeatureCollection, GenussResult, GeocodeHit } from "@/lib/types";
+import type { GenussResult, GeocodeHit, RichPoi } from "@/lib/types";
 
 const TYPE_COLOR: Record<string, string> = {
   Weingut: "#9333ea", Brauerei: "#d97706", Brennerei: "#b45309", Käserei: "#eab308",
   Hofladen: "#16a34a", Metzgerei: "#dc2626", Konditorei: "#db2777", Hofgemüse: "#65a30d",
   Wochenmarkt: "#0ea5e9", Erzeuger: "#64748b",
+};
+
+const METHOD: MethodContent = {
+  intro:
+    "Der Genuss-Radar bündelt die authentischen, regionalen Erzeuger rund um deinen Ort — mit aktuellem „geöffnet\"-Status, Öffnungszeiten und Website, damit Gäste direkt losfahren können.",
+  sources: [
+    "OpenStreetMap (Overpass API) — Hofläden, Weingüter, Brauereien, Brennereien, Käsereien, Metzgereien, Wochenmärkte (15 km)",
+    "OSM-Tags — Öffnungszeiten, Website, Telefon, Barrierefreiheit · Wikipedia — Foto/Text bei bekannten Betrieben",
+    "FOSSGIS-Valhalla — Route zum Erzeuger",
+  ],
+  steps: [
+    "Wir suchen alle Erzeuger-Typen im Umkreis aus OpenStreetMap.",
+    "Aus den OSM-Öffnungszeiten berechnen wir, ob gerade geöffnet ist.",
+    "Die nächstgelegenen Betriebe reichern wir mit Website/Telefon und — wo vorhanden — Wikipedia-Foto an.",
+    "Route zum Betrieb auf Wunsch direkt auf der Karte.",
+  ],
+  limits: [
+    "„geöffnet jetzt\" beruht auf den in OSM hinterlegten Öffnungszeiten — Feiertage/Sonderöffnungen sind selten erfasst.",
+    "Sehr kleine Hofläden ohne OSM-Eintrag fehlen; ein leeres Ergebnis heißt nicht, dass es keine Erzeuger gibt.",
+  ],
 };
 
 export default function GenussRadar() {
@@ -42,21 +62,27 @@ export default function GenussRadar() {
   }
 
   const types = useMemo(() => Array.from(new Set(result?.producers.map((p) => p.type) ?? [])), [result]);
-  const shown = useMemo(
-    () => (result ? result.producers.filter((p) => active.length === 0 || active.includes(p.type)) : []),
-    [result, active]
-  );
-  const pois = useMemo<FeatureCollection | null>(() => {
-    if (!result) return null;
-    return {
-      type: "FeatureCollection",
-      features: shown.map((p) => ({
-        type: "Feature",
-        properties: { cat: "prod", name: p.name, sub: `${p.type} · ${p.distance_km} km`, color: TYPE_COLOR[p.type] ?? "#64748b" },
-        geometry: { type: "Point", coordinates: [p.lng, p.lat] },
-      })),
-    };
-  }, [shown, result]);
+  const pois = useMemo<RichPoi[]>(() => {
+    if (!result) return [];
+    return result.producers
+      .filter((p) => active.length === 0 || active.includes(p.type))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        lat: p.lat,
+        lng: p.lng,
+        color: TYPE_COLOR[p.type] ?? "#64748b",
+        category_label: p.type,
+        distance_km: p.distance_km,
+        description: p.description,
+        image: p.image,
+        wiki_url: p.wiki_url,
+        open_now: p.open_now,
+        website: p.website,
+        phone: p.phone,
+        wheelchair: p.wheelchair,
+      }));
+  }, [result, active]);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
@@ -65,7 +91,7 @@ export default function GenussRadar() {
         <h1 className="mb-3 text-3xl font-bold text-brand sm:text-4xl">Regionale Erzeuger &amp; Spezialitäten</h1>
         <p className="mx-auto max-w-2xl text-slate-600">
           Hofläden, Weingüter, Brauereien, Käsereien, Wochenmärkte — die authentischen, regionalen
-          Genuss-Adressen rund um deinen Ort.
+          Genuss-Adressen rund um deinen Ort, mit „geöffnet jetzt" und Route.
         </p>
       </header>
 
@@ -85,7 +111,13 @@ export default function GenussRadar() {
       {(status === "error" || status === "timeout" || status === "not_found") && <ErrorBox message={errorMessage} />}
 
       {status === "done" && result && (
-        <section className="space-y-5">
+        <RichResults
+          center={result.center}
+          pois={pois}
+          method={METHOD}
+          mailSubject="Genuss-Radar für unsere Region"
+          routeMode="car"
+        >
           <div className="flex flex-wrap gap-2">
             {types.map((t) => {
               const on = active.length === 0 || active.includes(t);
@@ -99,23 +131,7 @@ export default function GenussRadar() {
               );
             })}
           </div>
-          <IsoMapDynamic
-            center={[result.center.lng, result.center.lat]}
-            zones={[]}
-            pois={pois}
-            markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
-            heightClass="h-[440px]"
-          />
-          <PoiList
-            items={shown.map((p) => ({
-              id: p.id,
-              name: p.name,
-              sub: `${p.type}${p.open_now === true ? " · geöffnet" : p.open_now === false ? " · geschlossen" : ""}`,
-              right: `${p.distance_km} km`,
-            }))}
-            emptyText="Keine Erzeuger in dieser Auswahl."
-          />
-        </section>
+        </RichResults>
       )}
     </main>
   );
