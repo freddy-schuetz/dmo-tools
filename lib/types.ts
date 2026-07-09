@@ -164,8 +164,18 @@ export type SchlechtwetterResult = {
 };
 
 // --- 8 Ruhe-Finder ----------------------------------------------------------
-export type QuietSpot = { id: string; name: string; lat: number; lng: number; score: number; nearest_noise_km: number; type: string };
-export type RuheResult = { center: LngLat; radius_km: number; quiet_spots: QuietSpot[] };
+export type QuietSpot = EnrichFields & {
+  id: string; name: string; lat: number; lng: number; type: string;
+  stille_score: number; noise_score: number; crowd_score: number;
+  nearest_noise_km: number; crowd_km?: number | null; sounds?: string[];
+};
+export type RuheResult = {
+  center: LngLat; radius_km: number;
+  ruhe_index: number; step_km: number; grid: { lat: number; lng: number; dist_km: number }[];
+  region_birds?: Species[];
+  quiet_spots: QuietSpot[];
+  stille_route?: { geometry: Feature; distance_km: number; duration_min: number; stops: string[] } | null;
+};
 
 // --- 9 Geheimtipp-Radar -----------------------------------------------------
 export type Hotspot = { name: string; lat: number; lng: number };

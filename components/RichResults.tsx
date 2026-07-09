@@ -5,7 +5,7 @@ import IsoMapDynamic from "./IsoMapDynamic";
 import PoiCard from "./PoiCard";
 import MethodBox, { type MethodContent } from "./MethodBox";
 import AboutSection from "./AboutSection";
-import type { RasterLayer, ZoneLayer } from "./IsoMap";
+import type { HeatCells, LineLayer, RasterLayer, ZoneLayer } from "./IsoMap";
 import { useRoute, type RouteMode } from "@/lib/useRoute";
 import type { Feature, FeatureCollection, LngLat, RichPoi } from "@/lib/types";
 
@@ -31,6 +31,8 @@ export default function RichResults({
   extraFeatures = [],
   rasterLayers = [],
   zones = [],
+  extraLines = [],
+  heatCells = [],
   children,
 }: {
   center: LngLat;
@@ -44,6 +46,8 @@ export default function RichResults({
   extraFeatures?: Feature[];
   rasterLayers?: RasterLayer[];
   zones?: ZoneLayer[]; // z. B. Schutzgebiets-Flächen (Wildtier)
+  extraLines?: LineLayer[]; // z. B. Stille-Spaziergang (Ruhe)
+  heatCells?: HeatCells[]; // z. B. Ruhe-Heatmap
   children?: ReactNode;
 }) {
   const routeOrigin = origin ?? center;
@@ -79,7 +83,7 @@ export default function RichResults({
     [pois, extraFeatures, routeOrigin]
   );
 
-  const lines = route ? [{ id: "route", data: route.geometry, color: "#1e3a5f", width: 5 }] : [];
+  const lines = [...(route ? [{ id: "route", data: route.geometry, color: "#1e3a5f", width: 5 }] : []), ...extraLines];
   const modeLabel = route?.mode === "bike" ? "Rad" : route?.mode === "car" ? "Auto" : "zu Fuß";
 
   return (
@@ -91,6 +95,7 @@ export default function RichResults({
           zones={zones}
           lines={lines}
           rasterLayers={rasterLayers}
+          heatCells={heatCells}
           pois={poiFC}
           markers={[{ lat: center.lat, lng: center.lng, color: markerColor }]}
           heightClass={mapHeight}
