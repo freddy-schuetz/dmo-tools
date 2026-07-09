@@ -11,6 +11,8 @@ import type { GeocodeHit, RichPoi, WildtierResult } from "@/lib/types";
 
 const TYPE_META: Record<string, { emoji: string; color: string }> = {
   "Beobachtungshütte": { emoji: "🦅", color: "#d97706" },
+  Beobachtungsturm: { emoji: "🗼", color: "#b45309" },
+  Besucherzentrum: { emoji: "ℹ️", color: "#7c3aed" },
   Schutzgebiet: { emoji: "🌿", color: "#16a34a" },
   "Feuchtgebiet/Moor": { emoji: "🦆", color: "#0891b2" },
   Naturbeobachtung: { emoji: "🔭", color: "#64748b" },
@@ -18,26 +20,27 @@ const TYPE_META: Record<string, { emoji: string; color: string }> = {
 
 const METHOD: MethodContent = {
   intro:
-    "Der Radar zeigt, WO man in der Region Natur und Tiere beobachten kann — und, dank echter GBIF-Sichtungsdaten, WELCHE Arten dort tatsächlich schon dokumentiert wurden.",
+    "Der Radar zeigt, WO man in der Region Natur und Tiere beobachten kann — und, dank echter GBIF-Sichtungsdaten, WELCHE Arten dort tatsächlich schon dokumentiert wurden. Wichtig: Er lenkt bewusst zu den Orten, die dafür GEMACHT sind.",
   sources: [
-    "OpenStreetMap (Overpass API) — Beobachtungshütten, Naturschutzgebiete, Feuchtgebiete/Moore im Umkreis",
+    "OpenStreetMap (Overpass API) — Beobachtungshütten & -türme, Natur-Besucherzentren, Schutzgebiete (als Flächen), Feuchtgebiete/Moore",
     "GBIF (Global Biodiversity Information Facility) — dokumentierte Tier-Sichtungen (Region + Top-Spots)",
-    "Wikipedia — Beschreibung/Foto der Gebiete · KI — Einordnung · Valhalla — Route",
+    "Wikipedia — Artenfotos, Beschreibung/Foto der Gebiete · KI — Einordnung · Valhalla — Route",
   ],
   steps: [
-    "Wir suchen alle Beobachtungsorte im Umkreis aus OpenStreetMap.",
-    "Über GBIF fragen wir ab, welche Tierarten in der Region (und an den Top-Spots) bereits dokumentiert wurden.",
+    "Wir suchen alle Beobachtungsorte im Umkreis — Hütten, Türme und Besucherzentren zuerst, denn die sind für Gäste eingerichtet.",
+    "Schutzgebiete zeigen wir als grüne Flächen auf der Karte (nicht nur als Punkt) — mit Verhaltens-Hinweis je Gebiet.",
+    "Über GBIF fragen wir ab, welche Tierarten in der Region (und an den Top-Spots) dokumentiert wurden — mit Wikipedia-Foto je Art.",
     "Die Top-Spots reichern wir mit Wikipedia-Text/Foto an; eine KI ordnet faktenbasiert ein, warum sich der Ort eignet.",
-    "Route zum Beobachtungsort auf Wunsch direkt auf der Karte.",
   ],
   scoring: [
     "„Dokumentierte Arten\" sind reale, von Menschen gemeldete GBIF-Beobachtungen — eine Sichtung ist damit möglich, aber nie garantiert.",
-    "Beobachtungshütten stehen oben, da sie am zuverlässigsten Tierbeobachtung ermöglichen.",
+    "Beobachtungshütten, -türme und Besucherzentren stehen oben — sie sind die touristischen Einstiegspunkte.",
+    "Schutzgebiete tragen einen Hinweis: Wege nicht verlassen, Brut- & Ruhezeiten beachten; streng geschützte Gebiete/Kernzonen sind markiert (Betreten meist untersagt).",
   ],
   limits: [
     "GBIF-Daten sind meldungsabhängig: gut besuchte Gebiete wirken artenreicher, weil dort mehr gemeldet wird.",
+    "Die Zugangsregeln je Gebiet sind aus OSM-Tags abgeleitet — verbindlich ist immer die Beschilderung vor Ort bzw. die Schutzgebietsverordnung.",
     "Deutsche Artnamen fehlen manchmal — dann zeigen wir den wissenschaftlichen Namen.",
-    "Wildtiere sind wild: bitte Schutzgebiete und Ruhezonen respektieren.",
   ],
 };
 
@@ -90,9 +93,16 @@ export default function Wildtier() {
         website: s.website,
         wheelchair: s.wheelchair,
         species: s.species,
-        badges: s.protected ? ["Schutzgebiet"] : undefined,
+        badges: s.for_visitors ? ["für Besucher eingerichtet"] : undefined,
+        notes: s.access_note ? [`🚷 ${s.access_note}`] : undefined,
       }));
   }, [result, active]);
+
+  // Schutzgebiete als grüne Flächen auf der Karte
+  const zones = useMemo(() => {
+    if (!result?.areas?.features?.length) return [];
+    return [{ id: "reserves", data: result.areas, color: "#16a34a", fillOpacity: 0.14 }];
+  }, [result]);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
@@ -133,18 +143,36 @@ export default function Wildtier() {
           method={METHOD}
           mailSubject="Wildtier-Beobachtungs-Radar für unsere Region"
           routeMode="foot"
+          zones={zones}
         >
           {result.region_species && result.region_species.length > 0 && (
             <div className="rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-200">
-              <h2 className="mb-2 font-bold text-emerald-800">🐾 In dieser Region dokumentiert (GBIF)</h2>
-              <div className="flex flex-wrap gap-1.5">
+              <h2 className="mb-3 font-bold text-emerald-800">🐾 Diese Arten sind hier dokumentiert (GBIF)</h2>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 {result.region_species.map((s) => (
-                  <span key={s.name_de} className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
-                    {s.name_de} <span className="text-emerald-400">· {s.count}</span>
-                  </span>
+                  <a
+                    key={s.name_de}
+                    href={s.wiki_url ?? undefined}
+                    target={s.wiki_url ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    className={`flex items-center gap-2 rounded-xl bg-white p-2 ring-1 ring-emerald-100 ${s.wiki_url ? "transition hover:ring-emerald-300" : "pointer-events-none"}`}
+                  >
+                    {s.image ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={s.image} alt={s.name_de} loading="lazy" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+                    ) : (
+                      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-emerald-100 text-lg" aria-hidden>🐾</span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold text-emerald-800">{s.name_de}</p>
+                      <p className="text-[10px] text-emerald-500">{s.count.toLocaleString("de-DE")} Sichtungen</p>
+                    </div>
+                  </a>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-emerald-600">Anzahl = gemeldete Beobachtungen. Sichtung möglich, nie garantiert.</p>
+              <p className="mt-2 text-xs text-emerald-600">
+                Anzahl = gemeldete Beobachtungen · Fotos: Wikipedia · Sichtung möglich, nie garantiert.
+              </p>
             </div>
           )}
           <div className="flex flex-wrap gap-2">
@@ -160,6 +188,11 @@ export default function Wildtier() {
               );
             })}
           </div>
+          {zones.length > 0 && (
+            <p className="-mb-3 text-center text-xs text-slate-400">
+              🟩 Grüne Flächen auf der Karte = Schutzgebiete (Wege nicht verlassen) · Punkte = Beobachtungsorte, anklickbar
+            </p>
+          )}
         </RichResults>
       )}
     </main>

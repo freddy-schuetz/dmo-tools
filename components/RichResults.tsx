@@ -5,7 +5,7 @@ import IsoMapDynamic from "./IsoMapDynamic";
 import PoiCard from "./PoiCard";
 import MethodBox, { type MethodContent } from "./MethodBox";
 import AboutSection from "./AboutSection";
-import type { RasterLayer } from "./IsoMap";
+import type { RasterLayer, ZoneLayer } from "./IsoMap";
 import { useRoute, type RouteMode } from "@/lib/useRoute";
 import type { Feature, FeatureCollection, LngLat, RichPoi } from "@/lib/types";
 
@@ -30,6 +30,7 @@ export default function RichResults({
   mapHeight = "h-[440px]",
   extraFeatures = [],
   rasterLayers = [],
+  zones = [],
   children,
 }: {
   center: LngLat;
@@ -42,6 +43,7 @@ export default function RichResults({
   mapHeight?: string;
   extraFeatures?: Feature[];
   rasterLayers?: RasterLayer[];
+  zones?: ZoneLayer[]; // z. B. Schutzgebiets-Flächen (Wildtier)
   children?: ReactNode;
 }) {
   const routeOrigin = origin ?? center;
@@ -86,7 +88,7 @@ export default function RichResults({
       <div className="space-y-2">
         <IsoMapDynamic
           center={[center.lng, center.lat]}
-          zones={[]}
+          zones={zones}
           lines={lines}
           rasterLayers={rasterLayers}
           pois={poiFC}

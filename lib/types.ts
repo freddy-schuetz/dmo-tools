@@ -20,8 +20,8 @@ export type StatusResponse<R> = {
 
 export type GeocodeHit = { label: string; lat: number; lng: number };
 
-// Angereicherte Wildtier-Art (GBIF)
-export type Species = { name_de: string; name_sci?: string | null; count: number };
+// Angereicherte Wildtier-Art (GBIF) — Foto/Link aus Wikipedia
+export type Species = { name_de: string; name_sci?: string | null; count: number; image?: string | null; wiki_url?: string | null };
 
 // Gemeinsame v2-Anreicherungsfelder, die die Tool-Backends je Spot mitliefern.
 export type EnrichFields = {
@@ -62,7 +62,8 @@ export type RichPoi = {
   wheelchair?: string | null;
   cuisine?: string | null;
   fee?: string | null;
-  badges?: string[]; // Extra-Chips, z.B. ["Schnelllader"]
+  badges?: string[]; // Extra-Chips grün, z.B. ["Schnelllader"]
+  notes?: string[]; // Hinweis-Chips amber, z.B. Zugangs-/Verhaltensregeln
   species?: Species[]; // nur Wildtier
 };
 
@@ -169,8 +170,11 @@ export type HiddenGem = EnrichFields & { id: string; name: string; lat: number; 
 export type GeheimtippResult = { center: LngLat; category: string; hotspots: Hotspot[]; hidden_gems: HiddenGem[] };
 
 // --- 10 Wildtier-Beobachtungs-Radar ----------------------------------------
-export type WildlifeSpot = EnrichFields & { id: string; name: string; type: string; lat: number; lng: number; distance_km: number; protected: boolean; species?: Species[] };
-export type WildtierResult = { center: LngLat; radius_km: number; region_species: Species[]; spots: WildlifeSpot[] };
+export type WildlifeSpot = EnrichFields & {
+  id: string; name: string; type: string; lat: number; lng: number; distance_km: number;
+  protected: boolean; for_visitors?: boolean; access_note?: string | null; species?: Species[];
+};
+export type WildtierResult = { center: LngLat; radius_km: number; region_species: Species[]; spots: WildlifeSpot[]; areas?: FeatureCollection };
 
 // --- 11 Laden-&-Erleben -----------------------------------------------------
 export type NearbyPoi = {
