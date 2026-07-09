@@ -23,14 +23,15 @@ const METHOD: MethodContent = {
     "OSM-Tags — „geöffnet jetzt\", Öffnungszeiten, Website · Wikipedia — Foto/Text bei bekannten Häusern",
   ],
   steps: [
-    "Wir prüfen das aktuelle Wetter und ob in den nächsten Stunden Regen wahrscheinlich ist.",
-    "Passend dazu holen wir Indoor-Ziele aus OpenStreetMap und berechnen ihren „geöffnet\"-Status.",
-    "Die nächstgelegenen Ziele reichern wir mit Wikipedia-Foto/Text und Website an.",
-    "Route zum Ziel auf Wunsch direkt auf der Karte.",
+    "Wir bauen aus den Stundendaten eine Raus/Rein-Timeline: zusammenhängende Trocken- und Regen-Fenster (8–22 Uhr; abends automatisch für morgen).",
+    "Passend dazu holen wir Indoor-Ziele aus OpenStreetMap, berechnen ihren „geöffnet\"-Status und markieren familientaugliche Ziele.",
+    "Eine KI baut daraus einen Regentag-Plan — ausschließlich aus den gefundenen Orten und ihren Öffnungszeiten, nichts erfunden.",
+    "Filter: „jetzt geöffnet\" und „mit Kindern\"; Route zum Ziel direkt auf der Karte.",
   ],
   limits: [
-    "Die Wetterempfehlung ist eine Momentaufnahme; kurzfristige Schauer lassen sich nie exakt vorhersagen.",
+    "Die Wetterfenster sind Prognosen; kurzfristige Schauer lassen sich nie exakt vorhersagen.",
     "„geöffnet jetzt\" beruht auf OSM-Öffnungszeiten — Feiertage sind selten erfasst.",
+    "Der Tagesplan ist ein KI-Vorschlag auf Datenbasis — Öffnungszeiten vor Ort kurz gegenprüfen.",
   ],
 };
 
@@ -41,6 +42,8 @@ export default function Schlechtwetter() {
   const { status, result, errorMessage } = usePolling<SchlechtwetterResult>(token);
   const [radarOn, setRadarOn] = useState(true);
   const [radarTiles, setRadarTiles] = useState<string[] | null>(null);
+  const [openOnly, setOpenOnly] = useState(false);
+  const [kidsOnly, setKidsOnly] = useState(false);
 
   // Regenradar-Kacheln (RainViewer) laden, sobald ein Ergebnis da ist
   useEffect(() => {
@@ -68,7 +71,12 @@ export default function Schlechtwetter() {
 
   const pois = useMemo<RichPoi[]>(() => {
     if (!result) return [];
-    return result.pois.map((p) => ({
+    let list = result.pois;
+    if (openOnly) list = list.filter((p) => p.open_now !== false);
+    if (kidsOnly) list = list.filter((p) => p.kids);
+    // offene zuerst
+    list = [...list].sort((a, b) => Number(b.open_now === true) - Number(a.open_now === true) || a.distance_km - b.distance_km);
+    return list.map((p) => ({
       id: p.id,
       name: p.name,
       lat: p.lat,
@@ -85,8 +93,9 @@ export default function Schlechtwetter() {
       website: p.website,
       phone: p.phone,
       wheelchair: p.wheelchair,
+      badges: p.kids ? ["👨‍👩‍👧 familientauglich"] : undefined,
     }));
-  }, [result]);
+  }, [result, openOnly, kidsOnly]);
 
   const rasterLayers = radarOn && radarTiles ? [{ id: "rain", tiles: radarTiles, opacity: 0.6 }] : [];
   const hours = result?.weather.hours ?? [];
@@ -142,6 +151,30 @@ export default function Schlechtwetter() {
                 </button>
               )}
             </div>
+            {/* Regenlücken-Timeline: Trocken-/Regen-Blöcke des Tages */}
+            {(result.weather.timeline?.length ?? 0) > 0 && (
+              <div className="mt-3">
+                <p className="mb-1 text-xs font-medium text-slate-500">
+                  Raus oder rein? Dein Tag {result.weather.timeline_day === "morgen" ? "morgen" : "heute"} im Überblick
+                </p>
+                <div className="flex overflow-hidden rounded-lg text-center text-[11px] font-medium">
+                  {result.weather.timeline!.map((b, i) => {
+                    const from = parseInt(b.from, 10), to = parseInt(b.to, 10);
+                    const w = Math.max(to - from, 1);
+                    return (
+                      <div
+                        key={i}
+                        style={{ flexGrow: w }}
+                        className={`px-1 py-2 ${b.kind === "dry" ? "bg-amber-200 text-amber-900" : "bg-blue-500 text-white"}`}
+                        title={`${b.from}–${b.to}`}
+                      >
+                        {b.kind === "dry" ? "☀️" : "🌧️"} {b.from}–{b.to}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {hours.length > 0 && (
               <div className="mt-3">
                 <p className="mb-1 text-xs font-medium text-slate-500">Regenwahrscheinlichkeit nächste Stunden</p>
@@ -162,6 +195,35 @@ export default function Schlechtwetter() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* KI-Regentag-Plan */}
+          {result.day_plan && (
+            <div className="rounded-2xl bg-violet-50 p-5 ring-1 ring-violet-200">
+              <h2 className="mb-2 font-bold text-violet-800">🗓 Dein Regentag-Plan</h2>
+              <p className="text-sm text-violet-900">{result.day_plan}</p>
+              <p className="mt-2 text-xs text-violet-500">
+                KI-Vorschlag aus den gefundenen Orten und ihren Öffnungszeiten — vor Ort bitte kurz gegenprüfen.
+              </p>
+            </div>
+          )}
+
+          {/* Filter-Toggles */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setOpenOnly((v) => !v)}
+              className={`rounded-full px-3 py-1 text-xs font-medium ring-1 transition ${openOnly ? "bg-ok text-white ring-ok" : "bg-white text-slate-500 ring-slate-300"}`}
+            >
+              ✅ jetzt geöffnet
+            </button>
+            <button
+              type="button"
+              onClick={() => setKidsOnly((v) => !v)}
+              className={`rounded-full px-3 py-1 text-xs font-medium ring-1 transition ${kidsOnly ? "bg-brand text-white ring-brand" : "bg-white text-slate-500 ring-slate-300"}`}
+            >
+              👨‍👩‍👧 mit Kindern
+            </button>
           </div>
         </RichResults>
       )}

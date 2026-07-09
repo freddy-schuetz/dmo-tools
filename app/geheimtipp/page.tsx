@@ -22,21 +22,23 @@ const METHOD: MethodContent = {
     "Der Geheimtipp-Radar lenkt Gäste bewusst weg von überlaufenen Hotspots hin zu gleichwertigen, aber unbekannten Alternativen — ein Werkzeug gegen Overtourism.",
   sources: [
     "OpenStreetMap (Overpass API) — alle Orte der gewählten Kategorie im Umkreis von 25 km",
-    "OSM-Signale — wikidata/wikipedia/Foto/Website als Prominenz-Indikatoren",
+    "Wikipedia-Pageviews (Wikimedia-API) — ECHTE monatliche Aufrufzahlen je Hotspot: Overtourism messbar gemacht",
+    "Wikimedia Commons (Geosearch) — freie Fotos aus < 150 m Umkreis für Geheimtipps ohne eigenen Wikipedia-Artikel",
     "OSM-Tags — Öffnungszeiten/Website · FOSSGIS-Valhalla — Route",
   ],
   steps: [
-    "Wir laden alle Orte der Kategorie und bestimmen die „Hotspots\": Orte mit hoher Prominenz (Wikipedia/Wikidata/Fotos).",
-    "Als Geheimtipps gelten Orte OHNE diese Prominenz-Signale, die möglichst weit von den Hotspots entfernt liegen.",
-    "Je weiter abseits, desto höher der Geheimtipp-Score.",
-    "Öffnungszeiten/Website (falls in OSM) ergänzen wir, Route auf Wunsch auf der Karte.",
+    "Wir laden alle Orte der Kategorie und bestimmen die „Hotspots\" (Wikipedia/Wikidata-Prominenz) — samt ihrer echten Wikipedia-Aufrufe des letzten Monats.",
+    "Geheimtipps = Orte OHNE Prominenz-Signale, möglichst weit von den Hotspots — mit Qualitätsfilter: Kleinst-Denkmäler, Wegkreuze & Co. fliegen raus, Substanz-Signale (Öffnungszeiten, Website, Höhe …) zählen.",
+    "Für Gems ohne Wikipedia-Foto suchen wir freie Commons-Fotos aus der unmittelbaren Umgebung.",
+    "Die Smart-Kombi schlägt vor: früh zum bekanntesten Hotspot (vor den Bussen), danach zum passenden Geheimtipp.",
   ],
   scoring: [
-    "Hotspot = hohe Prominenz (wikidata = stark, wikipedia, Foto, Website).",
-    "Geheimtipp = benannt, aber ohne diese Signale UND abseits der Hotspots. Score 0–100 = relative Entfernung zum nächsten Hotspot (bis 15 km).",
+    "Hotspot = hohe Prominenz (wikidata, wikipedia, Foto, Website) — die Aufrufzahlen machen den Unterschied sichtbar (z. B. 22.000/Monat vs. ~0).",
+    "Geheimtipp-Score 0–100 = relative Entfernung zum nächsten Hotspot (bis 15 km).",
   ],
   limits: [
     "Bewusst KEINE KI-Beschreibung: Geheimtipps haben per Definition keine Wikipedia-Fakten, die man zitieren könnte — wir würden sonst raten.",
+    "Commons-Umgebungsfotos zeigen die unmittelbare Umgebung — nicht garantiert exakt das Objekt (als Hinweis markiert).",
     "„Unbekannt in OSM\" heißt nicht automatisch „unentdeckt\" — lokal kann ein Ort durchaus bekannt sein.",
   ],
 };
@@ -83,10 +85,12 @@ export default function Geheimtipp() {
       image: g.image,
       wiki_url: g.wiki_url,
       open_now: g.open_now,
+      opening_hours: g.opening_hours,
       website: g.website,
       phone: g.phone,
       wheelchair: g.wheelchair,
       cuisine: g.cuisine,
+      notes: g.photo_note ? ["📷 Foto aus unmittelbarer Umgebung (Commons)"] : undefined,
     }));
   }, [result]);
 
@@ -141,9 +145,25 @@ export default function Geheimtipp() {
           extraFeatures={hotspotFeatures}
         >
           {result.hotspots.length > 0 && (
-            <div className="rounded-2xl bg-red-50 p-4 text-sm text-red-800 ring-1 ring-red-200">
-              <span className="font-semibold">🔴 Bekannte Hotspots</span> (Karte, rot): {result.hotspots.map((h) => h.name).join(", ")}
-              <span className="text-red-500"> — 💎 grün = die ruhigeren Alternativen unten.</span>
+            <div className="rounded-2xl bg-red-50 p-4 ring-1 ring-red-200">
+              <p className="mb-2 text-sm font-semibold text-red-800">🔴 Die Hotspots — mit echten Besucherzahlen (Wikipedia-Aufrufe/Monat)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {result.hotspots.map((h) => (
+                  <span key={h.name} className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-red-700 ring-1 ring-red-200">
+                    ⭐ {h.name}
+                    {h.views_month != null && <span className="text-red-400"> · {h.views_month.toLocaleString("de-DE")} Aufrufe/Monat</span>}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-red-500">
+                💎 Deine Geheimtipps unten: ~0 Wikipedia-Aufrufe — genau darum sind sie ruhig.
+              </p>
+            </div>
+          )}
+          {result.combo && (
+            <div className="rounded-2xl bg-teal-50 p-4 ring-1 ring-teal-200">
+              <p className="mb-1 text-sm font-semibold text-teal-800">🕗 Smart-Kombi für den Tag</p>
+              <p className="text-sm text-teal-900">{result.combo.tipp}</p>
             </div>
           )}
         </RichResults>

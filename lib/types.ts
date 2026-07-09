@@ -117,8 +117,10 @@ export type ThementourResult = {
   start: LngLat;
   start_label: string;
   theme: string;
+  travel?: "foot" | "bike";
   stops: TourStop[];
-  route: { geometry: Feature; distance_km: number; duration_min: number };
+  route: { geometry: Feature; distance_km: number; duration_min: number; ascent_m?: number | null; descent_m?: number | null } | null;
+  elevation_profile?: number[] | null;
   roundtrip: boolean;
 };
 
@@ -126,8 +128,12 @@ export type ThementourResult = {
 export type Producer = EnrichFields & {
   id: string; name: string; type: string; lat: number; lng: number;
   distance_km: number; open_now: boolean | null; website: string | null;
+  products?: string[]; always_open?: boolean; today_hours?: string | null;
 };
-export type GenussResult = { center: LngLat; producers: Producer[] };
+export type GenussResult = {
+  center: LngLat; producers: Producer[];
+  markets_today?: { name: string; hours: string; distance_km: number; lat: number; lng: number }[];
+};
 
 // --- 5 Golden-Hour-Fotospot-Finder -----------------------------------------
 export type PhotoSpot = EnrichFields & {
@@ -162,14 +168,17 @@ export type Wonder = EnrichFields & {
 export type NaturwunderResult = { center: LngLat; wonders: Wonder[] };
 
 // --- 7 Schlechtwetter-Radar -------------------------------------------------
-export type IndoorPoi = EnrichFields & { id: string; name: string; cat: string; lat: number; lng: number; distance_km: number; open_now: boolean | null; website: string | null };
+export type IndoorPoi = EnrichFields & { id: string; name: string; cat: string; lat: number; lng: number; distance_km: number; open_now: boolean | null; website: string | null; kids?: boolean };
 export type SchlechtwetterResult = {
   center: LngLat;
   weather: {
     temp: number; precipitation: number; rain_soon: boolean;
     recommendation: "indoor" | "outdoor"; summary: string;
     hours?: { t: string; prob: number }[];
+    timeline?: { from: string; to: string; kind: "dry" | "rain" }[];
+    timeline_day?: "heute" | "morgen";
   };
+  day_plan?: string | null;
   pois: IndoorPoi[];
 };
 
@@ -190,9 +199,15 @@ export type RuheResult = {
 };
 
 // --- 9 Geheimtipp-Radar -----------------------------------------------------
-export type Hotspot = { name: string; lat: number; lng: number };
-export type HiddenGem = EnrichFields & { id: string; name: string; lat: number; lng: number; gem_score: number; distance_from_hotspot_km: number; why: string };
-export type GeheimtippResult = { center: LngLat; category: string; hotspots: Hotspot[]; hidden_gems: HiddenGem[] };
+export type Hotspot = { name: string; lat: number; lng: number; views_month?: number | null };
+export type HiddenGem = EnrichFields & {
+  id: string; name: string; lat: number; lng: number; gem_score: number;
+  distance_from_hotspot_km: number; why: string; alt_to?: string | null; photo_note?: string | null;
+};
+export type GeheimtippResult = {
+  center: LngLat; category: string; hotspots: Hotspot[]; hidden_gems: HiddenGem[];
+  combo?: { hotspot: string; hotspot_views: number | null; gem: string; tipp: string } | null;
+};
 
 // --- 10 Wildtier-Beobachtungs-Radar ----------------------------------------
 export type WildlifeSpot = EnrichFields & {

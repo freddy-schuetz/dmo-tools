@@ -11,22 +11,26 @@ import type { GenussResult, GeocodeHit, RichPoi } from "@/lib/types";
 const TYPE_COLOR: Record<string, string> = {
   Weingut: "#9333ea", Brauerei: "#d97706", Brennerei: "#b45309", Käserei: "#eab308",
   Hofladen: "#16a34a", Metzgerei: "#dc2626", Konditorei: "#db2777", Hofgemüse: "#65a30d",
-  Wochenmarkt: "#0ea5e9", Erzeuger: "#64748b",
+  Wochenmarkt: "#0ea5e9", Hofautomat: "#0891b2", Erzeuger: "#64748b",
+};
+const TYPE_EMOJI: Record<string, string> = {
+  Weingut: "🍷", Brauerei: "🍺", Brennerei: "🥃", Käserei: "🧀", Hofladen: "🧺",
+  Metzgerei: "🥩", Konditorei: "🧁", Hofgemüse: "🥕", Wochenmarkt: "🛒", Hofautomat: "🥛",
 };
 
 const METHOD: MethodContent = {
   intro:
     "Der Genuss-Radar bündelt die authentischen, regionalen Erzeuger rund um deinen Ort — mit aktuellem „geöffnet\"-Status, Öffnungszeiten und Website, damit Gäste direkt losfahren können.",
   sources: [
-    "OpenStreetMap (Overpass API) — Hofläden, Weingüter, Brauereien, Brennereien, Käsereien, Metzgereien, Wochenmärkte (15 km)",
-    "OSM-Tags — Öffnungszeiten, Website, Telefon, Barrierefreiheit · Wikipedia — Foto/Text bei bekannten Betrieben",
+    "OpenStreetMap (Overpass API) — Hofläden, Weingüter, Brauereien, Käsereien, Wochenmärkte UND Hofautomaten/Milchtankstellen (vending=milk/eggs/…) im Umkreis von 15 km",
+    "OSM-Tags — produce/organic („Was gibt's dort?“), Öffnungszeiten, Website · Wikipedia — Foto/Text bei bekannten Betrieben",
     "FOSSGIS-Valhalla — Route zum Erzeuger",
   ],
   steps: [
-    "Wir suchen alle Erzeuger-Typen im Umkreis aus OpenStreetMap.",
-    "Aus den OSM-Öffnungszeiten berechnen wir, ob gerade geöffnet ist.",
-    "Die nächstgelegenen Betriebe reichern wir mit Website/Telefon und — wo vorhanden — Wikipedia-Foto an.",
-    "Route zum Betrieb auf Wunsch direkt auf der Karte.",
+    "Wir suchen alle Erzeuger-Typen im Umkreis — inklusive der 24/7-Hofautomaten (Regional-Trend!).",
+    "Aus den OSM-Öffnungszeiten berechnen wir „geöffnet jetzt“ und heben Wochenmärkte hervor, die HEUTE stattfinden.",
+    "Aus produce-/organic-Tags entstehen Produkt-Chips (🥛 Milch, 🥚 Eier, 🍯 Honig, 🌱 Bio …).",
+    "Route zum Betrieb auf Wunsch direkt auf der Karte; Filter „jetzt geöffnet“.",
   ],
   limits: [
     "„geöffnet jetzt\" beruht auf den in OSM hinterlegten Öffnungszeiten — Feiertage/Sonderöffnungen sind selten erfasst.",
@@ -40,6 +44,7 @@ export default function GenussRadar() {
   const [startError, setStartError] = useState<string | null>(null);
   const { status, result, errorMessage } = usePolling<GenussResult>(token);
   const [active, setActive] = useState<string[]>([]);
+  const [openOnly, setOpenOnly] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,13 +69,15 @@ export default function GenussRadar() {
   const types = useMemo(() => Array.from(new Set(result?.producers.map((p) => p.type) ?? [])), [result]);
   const pois = useMemo<RichPoi[]>(() => {
     if (!result) return [];
-    return result.producers
-      .filter((p) => active.length === 0 || active.includes(p.type))
-      .map((p) => ({
+    let list = result.producers.filter((p) => active.length === 0 || active.includes(p.type));
+    if (openOnly) list = list.filter((p) => p.always_open || p.open_now !== false);
+    list = [...list].sort((a, b) => Number(b.always_open || b.open_now === true) - Number(a.always_open || a.open_now === true) || a.distance_km - b.distance_km);
+    return list.map((p) => ({
         id: p.id,
         name: p.name,
         lat: p.lat,
         lng: p.lng,
+        emoji: TYPE_EMOJI[p.type],
         color: TYPE_COLOR[p.type] ?? "#64748b",
         category_label: p.type,
         distance_km: p.distance_km,
@@ -82,8 +89,12 @@ export default function GenussRadar() {
         website: p.website,
         phone: p.phone,
         wheelchair: p.wheelchair,
+        badges: [
+          ...(p.always_open ? ["🕐 rund um die Uhr"] : []),
+          ...(p.products ?? []),
+        ],
       }));
-  }, [result, active]);
+  }, [result, active, openOnly]);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
@@ -119,7 +130,19 @@ export default function GenussRadar() {
           mailSubject="Genuss-Radar für unsere Region"
           routeMode="car"
         >
-          <div className="flex flex-wrap gap-2">
+          {(result.markets_today?.length ?? 0) > 0 && (
+            <div className="rounded-2xl bg-amber-50 p-5 ring-1 ring-amber-200">
+              <h2 className="mb-2 font-bold text-amber-800">🛒 Heute Markt!</h2>
+              <ul className="space-y-1 text-sm text-amber-900">
+                {result.markets_today!.map((m, i) => (
+                  <li key={i}>
+                    <strong>{m.name}</strong> — heute {m.hours} Uhr · {m.distance_km} km entfernt
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
             {types.map((t) => {
               const on = active.length === 0 || active.includes(t);
               return (
@@ -127,10 +150,17 @@ export default function GenussRadar() {
                   onClick={() => setActive((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]))}
                   className={`rounded-full px-3 py-1 text-xs font-medium ring-1 transition ${on ? "text-white" : "bg-white text-slate-500 ring-slate-300"}`}
                   style={on ? { backgroundColor: TYPE_COLOR[t] ?? "#64748b", borderColor: TYPE_COLOR[t] ?? "#64748b" } : {}}>
-                  {t}
+                  {TYPE_EMOJI[t] ? `${TYPE_EMOJI[t]} ` : ""}{t}
                 </button>
               );
             })}
+            <button
+              type="button"
+              onClick={() => setOpenOnly((v) => !v)}
+              className={`ml-auto rounded-full px-3 py-1 text-xs font-medium ring-1 transition ${openOnly ? "bg-ok text-white ring-ok" : "bg-white text-slate-500 ring-slate-300"}`}
+            >
+              ✅ jetzt geöffnet
+            </button>
           </div>
         </RichResults>
       )}

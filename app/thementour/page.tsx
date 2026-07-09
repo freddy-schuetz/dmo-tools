@@ -23,24 +23,70 @@ const LENGTHS = [
   { value: "mittel", label: "mittel" },
   { value: "lang", label: "lang" },
 ];
+const TRAVELS = [
+  { value: "foot", label: "🚶 zu Fuß" },
+  { value: "bike", label: "🚲 per Rad" },
+];
+
+// GPX-Export: Route + Stopps als Wegpunkte, rein clientseitig aus der Geometrie
+function downloadGpx(result: ThementourResult) {
+  if (!result.route) return;
+  const coords = (result.route.geometry.geometry as { coordinates: number[][] }).coordinates;
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+  const wpts = result.stops.map((s) => `  <wpt lat="${s.lat}" lon="${s.lng}"><name>${esc(`${s.order}. ${s.name}`)}</name></wpt>`).join("\n");
+  const trkpts = coords.map(([lng, lat]) => `      <trkpt lat="${lat}" lon="${lng}"></trkpt>`).join("\n");
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="dmo-tools / friedemann-schuetz.de" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>${esc(`Thementour ${result.theme} · ${result.start_label}`)}</name></metadata>
+${wpts}
+  <trk><name>${esc(`Thementour (${result.travel === "bike" ? "Rad" : "zu Fuß"}, ${result.route.distance_km} km)`)}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+  const blob = new Blob([gpx], { type: "application/gpx+xml" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `thementour-${result.theme}.gpx`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Mini-Höhenprofil als Inline-SVG
+function ElevationSparkline({ profile }: { profile: number[] }) {
+  const w = 280, h = 48;
+  const min = Math.min(...profile), max = Math.max(...profile);
+  const span = Math.max(max - min, 10);
+  const pts = profile.map((e, i) => `${((i / (profile.length - 1)) * w).toFixed(1)},${(h - ((e - min) / span) * (h - 6) - 3).toFixed(1)}`).join(" ");
+  return (
+    <svg width={w} height={h} className="overflow-visible" aria-label="Höhenprofil">
+      <polyline points={pts} fill="none" stroke="#9333ea" strokeWidth="2" strokeLinejoin="round" />
+      <text x="0" y={h - 1} fontSize="9" fill="#94a3b8">{min} m</text>
+      <text x={w} y="8" fontSize="9" fill="#94a3b8" textAnchor="end">{max} m</text>
+    </svg>
+  );
+}
 
 const METHOD: MethodContent = {
   intro:
     "Der Generator stellt aus passenden Orten deiner Wahl automatisch eine fußläufige Rundtour zusammen — inklusive echter Wegführung und angereicherter Stopps. Fertiger Content für DMO-Websites.",
   sources: [
     "OpenStreetMap (Overpass API) — themenpassende Orte (Kultur/Genuss/Natur/Familie) rund um den Startpunkt",
-    "FOSSGIS-Valhalla — reale Fußweg-Route als Rundtour (Start → Stopps → Start)",
-    "Wikipedia — Kurztext/Foto der Stopps · OSM-Tags — Öffnungszeiten/Website",
+    "FOSSGIS-Valhalla — reale Rundtour zu Fuß ODER per Rad (Start → Stopps → Start)",
+    "Open-Meteo Elevation — Höhenprofil & Höhenmeter entlang der Route",
+    "Wikipedia — Kurztext/Foto der Stopps · KI — 1 Satz je Stopp (faktenbasiert) · OSM-Tags — Öffnungszeiten/Website",
   ],
   steps: [
-    "Wir suchen themenpassende Orte im Umkreis des Startpunkts.",
-    "Per Nearest-Neighbor bringen wir sie in eine sinnvolle Reihenfolge.",
-    "Valhalla berechnet die reale Fußweg-Rundtour; die Stopps reichern wir mit Wikipedia + Öffnungszeiten an.",
-    "Das Ergebnis lässt sich 1:1 als Tour-Vorschlag übernehmen.",
+    "Wir suchen themenpassende Orte im Umkreis — zu Fuß kompakt, per Rad die Highlights im großen Radius (räumlich gestreut statt Innenstadt-Klumpen).",
+    "Per Nearest-Neighbor entsteht die Reihenfolge; Valhalla berechnet die echte Rundtour (Fuß-/Radwege).",
+    "Höhenprofil + Höhenmeter kommen aus einem Geländemodell; die Stopps bekommen Wikipedia-Text/Foto und einen KI-Satz.",
+    "Per GPX-Export nimmst du die Tour direkt mit zu Komoot, Garmin oder Outdooractive.",
   ],
   limits: [
     "Die Reihenfolge ist heuristisch (Nearest-Neighbor), nicht die mathematisch kürzeste Route.",
-    "Die Tour verbindet vorhandene OSM-Orte — sie ersetzt keine kuratierte, redaktionelle Tour.",
+    "Höhendaten aus ~90-m-Raster — Näherung, keine Vermessung.",
+    "Personen-Gedenkorte (z. B. Stolpersteine) werden bewusst nicht als Tour-Stopps verwendet.",
   ],
 };
 
@@ -48,6 +94,7 @@ export default function Thementour() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
   const [theme, setTheme] = useState("kultur");
   const [length, setLength] = useState("mittel");
+  const [travel, setTravel] = useState("foot");
   const [token, setToken] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const { status, result, errorMessage } = usePolling<ThementourResult>(token);
@@ -61,7 +108,7 @@ export default function Thementour() {
       const res = await fetch("/api/thementour/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: hit.label, lat: hit.lat, lng: hit.lng, theme, length }),
+        body: JSON.stringify({ address: hit.label, lat: hit.lat, lng: hit.lng, theme, length, travel }),
       });
       const data = await res.json();
       if (!res.ok || !data.token) return setStartError("Konnte nicht gestartet werden.");
@@ -131,6 +178,10 @@ export default function Thementour() {
             <span className="mb-1 block text-sm font-medium">Länge</span>
             <OptionPills options={LENGTHS} value={length} onChange={setLength} ariaLabel="Länge" />
           </div>
+          <div>
+            <span className="mb-1 block text-sm font-medium">Unterwegs</span>
+            <OptionPills options={TRAVELS} value={travel} onChange={setTravel} ariaLabel="Fortbewegung" />
+          </div>
           <button type="submit" disabled={status === "running"}
             className="ml-auto rounded-lg bg-brand px-5 py-2 font-semibold text-white transition hover:bg-brand/90 disabled:opacity-50">
             {status === "running" ? "Baue Tour …" : "Tour erstellen"}
@@ -145,9 +196,28 @@ export default function Thementour() {
       {status === "done" && result && (
         <section className="space-y-5">
           {result.route && (
-            <p className="text-center text-sm text-slate-600">
-              🚶 Rundweg <strong>{result.route.distance_km} km</strong> · ca. <strong>{result.route.duration_min} Min</strong> · {result.stops.length} Stopps
-            </p>
+            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-600">
+                  {result.travel === "bike" ? "🚲" : "🚶"} Rundweg <strong>{result.route.distance_km} km</strong> · ca. <strong>{result.route.duration_min} Min</strong> · {result.stops.length} Stopps
+                  {result.route.ascent_m != null && (
+                    <span className="text-slate-500"> · ↗ {result.route.ascent_m} Hm · ↘ {result.route.descent_m} Hm</span>
+                  )}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => downloadGpx(result)}
+                  className="rounded-lg border border-brand px-3 py-1.5 text-sm font-semibold text-brand transition hover:bg-slate-50"
+                >
+                  ⬇ GPX für Komoot/Garmin
+                </button>
+              </div>
+              {result.elevation_profile && result.elevation_profile.length > 5 && (
+                <div className="mt-2">
+                  <ElevationSparkline profile={result.elevation_profile} />
+                </div>
+              )}
+            </div>
           )}
           <IsoMapDynamic
             center={[result.start.lng, result.start.lat]}
