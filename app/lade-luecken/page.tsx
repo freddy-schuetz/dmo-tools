@@ -14,35 +14,57 @@ import type { FeatureCollection, GeocodeHit, LadeLueckenResult } from "@/lib/typ
 
 const METHOD: MethodContent = {
   intro:
-    "Immer mehr Gäste reisen mit dem E-Auto an. Der Radar zeigt, wie flächendeckend deine Region mit Ladeinfrastruktur versorgt ist — und wo „Lade-Wüsten“ die Anreise erschweren.",
+    "Der Radar beantwortet zwei Fragen: WO fehlt Ladeinfrastruktur (räumliche Abdeckung, Heat-Fläche) — und REICHEN die Ladepunkte mengenmäßig, heute und im E-Auto-Szenario (Kapazitäts-Check)?",
   sources: [
-    "OpenStreetMap (Overpass API) — alle Ladestationen (amenity=charging_station) im gewählten Radius",
-    "Nominatim — Geokodierung der Region",
+    "Bundesnetzagentur — amtliches Ladesäulenregister (Ladepunkte + Nennleistung kW je Standort; Stand wird im Ergebnis angezeigt). Fallback: OpenStreetMap",
+    "OpenStreetMap — Einwohner (place-Nodes mit population-Tag) und Beherbergungsbetriebe für die Nachfrage-Schätzung",
+    "KBA-Motorisierungsgrad — ~580 Pkw je 1.000 Einwohner (Bundesschnitt)",
+    "EU-AFIR (Verordnung 2023/1804) — Benchmark ~1,3 kW öffentliche Ladeleistung je E-Auto",
   ],
   steps: [
-    "Wir laden alle Ladestationen der Region aus OpenStreetMap.",
-    "Die Region wird in ein Raster aus 2–3 km-Zellen zerlegt.",
-    "Für jede Zelle berechnen wir die Luftlinien-Distanz zur nächstgelegenen Ladesäule.",
-    "Zellen, die weiter als 5 km entfernt sind, markieren wir als Lade-Lücke (rot).",
+    "Wir laden alle öffentlichen Ladestationen der Region aus dem BNetzA-Register (inkl. Ladepunkten und kW).",
+    "Abdeckung: Die Region wird in 2–3-km-Zellen gerastert; je Zelle die Distanz zur nächsten Station → Heat-Fläche, Zellen > 5 km = Lade-Lücke.",
+    "Kapazität: Wir summieren das Angebot (Ladepunkte, kW) und schätzen die Nachfrage — Einwohner × 0,58 Pkw plus Gäste-Pkw aus Unterkunfts-Betten (× 0,25).",
+    "Szenario: Du wählst den E-Auto-Anteil (heute ≈ 5 % bis 50 %) — benötigte Ladeleistung = E-Pkw × 1,3 kW (AFIR) gegen die verfügbare Leistung.",
   ],
   scoring: [
-    "Die E-Auto-Readiness ist der Anteil der Fläche innerhalb von 5 km zu einer Ladesäule (100 − Lücken-Anteil).",
-    "≥ 70 = gut versorgt · 40–69 = teils Lücken · < 40 = viele Lade-Wüsten.",
-    "Auf der Karte: rot = Lücke (> 5 km), grün = versorgt, blau = Ladestation.",
+    "Abdeckungs-Score = Anteil der Fläche innerhalb von 5 km zu einer Ladesäule (100 − Lücken-Anteil).",
+    "Kapazitäts-Score = verfügbare kW ÷ benötigte kW im gewählten Szenario × 100 (100 = AFIR-Benchmark erfüllt, gedeckelt bei 100).",
   ],
   limits: [
-    "Grundlage ist die Luftlinie, nicht die tatsächliche Fahrstrecke — im Gebirge sind reale Wege länger.",
-    "Ladeleistung und Verfügbarkeit fließen nicht ein; eine gemeldete Säule kann langsam oder defekt sein.",
-    "Nur in OSM erfasste Stationen zählen — brandneue Standorte fehlen evtl. noch.",
+    "Einwohner stammen aus OSM-population-Tags — Orte am Rand zählen ganz oder gar nicht; die Schätzung ist grob.",
+    "Gäste-Pkw sind eine Heuristik aus OSM-Unterkünften (Betten × Auslastung) — Destatis-Übernachtungen haben keine frei abrufbare API je Gemeinde.",
+    "Private und Hotel-Wallboxen fehlen im öffentlichen Register — für Destinationen eine echte Datenlücke.",
+    "AFIR gilt als nationale Flottenvorgabe — wir nutzen sie hier als lokalen Vergleichsmaßstab.",
+    "Abdeckung basiert auf Luftlinie; Auslastung/Defekte einzelner Säulen sind nicht erfasst.",
   ],
 };
+
+const SHARE_OPTIONS = [
+  { value: 5, label: "Heute (≈5 %)" },
+  { value: 15, label: "15 %" },
+  { value: 30, label: "30 %" },
+  { value: 50, label: "50 %" },
+];
 
 export default function LadeLuecken() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
   const [radius, setRadius] = useState(15);
+  const [eShare, setEShare] = useState(30);
   const [token, setToken] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const { status, result, errorMessage } = usePolling<LadeLueckenResult>(token);
+
+  // Kapazitäts-Szenario: Rohzahlen kommen vom Backend, das Umschalten rechnet live hier.
+  const cap = result?.capacity;
+  const scenario = useMemo(() => {
+    if (!cap || cap.resident_cars + cap.tourist_cars <= 0) return null;
+    const cars = cap.resident_cars + cap.tourist_cars;
+    const bev = Math.round((cars * eShare) / 100);
+    const neededKw = Math.round(bev * cap.afir_kw_per_bev);
+    const ratio = neededKw > 0 ? cap.supply_kw / neededKw : Infinity;
+    return { cars, bev, neededKw, ratio, score: Math.min(100, Math.round(ratio * 100)) };
+  }, [cap, eShare]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -96,15 +118,18 @@ export default function LadeLuecken() {
     }];
   }, [result]);
 
-  // Ladesäulen als ⚡-Punkte
+  // Ladesäulen als ⚡-Punkte (Backend liefert Popup-Infos: kW, Ladepunkte, Quelle; grün = Schnelllader)
   const pois = useMemo<FeatureCollection | null>(() => {
     if (!result) return null;
     return {
       type: "FeatureCollection",
-      features: result.chargers.features.map((f) => ({
-        ...f,
-        properties: { ...f.properties, color: "#1e3a5f", emoji: "⚡", name: (f.properties as { name?: string })?.name ?? "Ladestation", category_label: "Ladestation" },
-      })),
+      features: result.chargers.features.map((f) => {
+        const p = (f.properties ?? {}) as { name?: string; color?: string };
+        return {
+          ...f,
+          properties: { ...f.properties, color: p.color ?? "#1e3a5f", emoji: "⚡", name: p.name ?? "Ladestation" },
+        };
+      }),
     };
   }, [result]);
 
@@ -114,10 +139,11 @@ export default function LadeLuecken() {
     <main className="mx-auto max-w-4xl px-4 py-10">
       <header className="mb-8 text-center">
         <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-brand-accent">Lade-Lücken-Radar</p>
-        <h1 className="mb-3 text-3xl font-bold text-brand sm:text-4xl">Wo fehlt E-Auto-Ladeinfrastruktur?</h1>
+        <h1 className="mb-3 text-3xl font-bold text-brand sm:text-4xl">Wo fehlt Ladeinfrastruktur — und reicht sie?</h1>
         <p className="mx-auto max-w-2xl text-slate-600">
-          Immer mehr Gäste reisen mit dem E-Auto an. Wir rastern deine Region und zeigen die
-          „Lade-Wüsten" — Bereiche, die weiter als 5 km von der nächsten Ladesäule entfernt sind.
+          Zwei Antworten in einem Check: die <strong>Lade-Wüsten</strong> deiner Region (Heat-Fläche,
+          Bereiche &gt; 5 km zur nächsten Säule) und der <strong>Kapazitäts-Check</strong> auf Basis des
+          amtlichen BNetzA-Registers — reichen die Ladepunkte heute und bei 30 % E-Auto-Anteil?
         </p>
       </header>
 
@@ -189,9 +215,64 @@ export default function LadeLuecken() {
                 <div className="h-2 flex-1 rounded" style={{ background: "linear-gradient(90deg,#16a34a,#84cc16,#eab308,#f97316,#dc2626)" }} />
                 <span>10 km+</span>
               </div>
-              <p className="mt-1 text-center text-xs text-slate-400">Grüne Fläche = gut versorgt · rote Fläche = Lade-Wüste · ⚡ Ladestation · blaue Nadel: Zentrum</p>
+              <p className="mt-1 text-center text-xs text-slate-400">Grüne Fläche = gut versorgt · rote Fläche = Lade-Wüste · ⚡ Ladestation (grün = Schnelllader, anklickbar) · blaue Nadel: Zentrum</p>
             </div>
           </Card>
+
+          {/* --- Kapazitäts-Check: Angebot vs. Nachfrage im E-Auto-Szenario --- */}
+          {cap && (
+            <Card>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-bold text-brand">Kapazitäts-Check: Reichen die Ladepunkte?</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">E-Auto-Anteil:</span>
+                  <OptionPills options={SHARE_OPTIONS} value={eShare} onChange={setEShare} ariaLabel="E-Auto-Anteil" />
+                </div>
+              </div>
+
+              {scenario ? (
+                <>
+                  <AuditScore
+                    score={scenario.score}
+                    title={`Kapazität bei ${eShare} % E-Auto-Anteil`}
+                    subtitle={`${cap.supply_kw.toLocaleString("de-DE")} kW verfügbar · ${scenario.neededKw.toLocaleString("de-DE")} kW benötigt (AFIR: 1,3 kW je E-Auto)`}
+                    labels={{ good: "Ausreichend dimensioniert", mid: "Wird knapp", bad: "Ausbaubedarf" }}
+                  />
+                  <div className="mt-4 grid gap-4 sm:grid-cols-4">
+                    <div className="rounded-xl bg-slate-50 p-4 text-center">
+                      <p className="text-2xl font-bold text-brand">{cap.charge_points.toLocaleString("de-DE")}</p>
+                      <p className="text-xs text-slate-500">Ladepunkte{cap.fast_points > 0 ? ` (${cap.fast_points.toLocaleString("de-DE")} schnell)` : ""}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4 text-center">
+                      <p className="text-2xl font-bold text-brand">{cap.supply_kw.toLocaleString("de-DE")} kW</p>
+                      <p className="text-xs text-slate-500">installierte Ladeleistung</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4 text-center">
+                      <p className="text-2xl font-bold text-brand">{scenario.cars.toLocaleString("de-DE")}</p>
+                      <p className="text-xs text-slate-500">Pkw geschätzt ({cap.resident_cars.toLocaleString("de-DE")} Einwohner + {cap.tourist_cars.toLocaleString("de-DE")} Gäste)</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4 text-center">
+                      <p className={`text-2xl font-bold ${scenario.score >= 70 ? "text-ok" : scenario.score >= 40 ? "text-warn" : "text-bad"}`}>
+                        {scenario.bev.toLocaleString("de-DE")}
+                      </p>
+                      <p className="text-xs text-slate-500">E-Autos im Szenario ({eShare} %)</p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-400">
+                    Quelle Ladeangebot: {cap.source === "BNetzA" ? `Bundesnetzagentur-Ladesäulenregister${cap.stand ? ` (Stand ${cap.stand})` : ""}` : "OpenStreetMap (BNetzA nicht erreichbar)"} ·
+                    Nachfrage geschätzt aus {cap.resident_pop.toLocaleString("de-DE")} Einwohnern
+                    {cap.places.length > 0 ? ` (u. a. ${cap.places.slice(0, 3).map((p) => p.name).join(", ")})` : ""} und {cap.tourist_beds.toLocaleString("de-DE")} Gästebetten
+                    ({cap.acc_count.toLocaleString("de-DE")} Unterkünfte) — Details in der Methodik-Box.
+                  </p>
+                </>
+              ) : (
+                <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-500">
+                  Für diese Region konnten keine Einwohner-/Unterkunftsdaten geschätzt werden — der Kapazitäts-Check ist hier nicht möglich.
+                  Angebot: {cap.charge_points.toLocaleString("de-DE")} Ladepunkte mit {cap.supply_kw.toLocaleString("de-DE")} kW.
+                </p>
+              )}
+            </Card>
+          )}
 
           <MethodBox content={METHOD} />
           <AboutSection mailSubject="Lade-Lücken-Radar für unsere Region" />

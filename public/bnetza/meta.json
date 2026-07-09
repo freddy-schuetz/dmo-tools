@@ -1,0 +1,8 @@
+{
+ "stand": "2026-07-07",
+ "stations": 113364,
+ "ladepunkte": 204038,
+ "gesamt_kw": 8772082,
+ "tiles": 231,
+ "quelle": "BNetzA Ladesäulenregister"
+}

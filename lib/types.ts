@@ -83,6 +83,23 @@ export type DatencheckResult = {
 
 // --- 2 Lade-Lücken-Radar ----------------------------------------------------
 export type GapCell = { lat: number; lng: number; dist_km: number; gap: boolean };
+// Kapazitäts-Rohzahlen (Angebot BNetzA/OSM vs. geschätzte Nachfrage) — Szenario rechnet das Frontend.
+export type ChargeCapacity = {
+  source: string; // "BNetzA" | "OSM"
+  stand: string | null; // Register-Stand (BNetzA)
+  station_count: number;
+  charge_points: number;
+  fast_points: number;
+  supply_kw: number;
+  resident_pop: number;
+  resident_cars: number;
+  tourist_beds: number;
+  tourist_cars: number;
+  acc_count: number;
+  places: { name: string; pop: number }[];
+  bev_share_today: number; // % (bundesweiter Näherungswert)
+  afir_kw_per_bev: number; // AFIR-Benchmark
+};
 export type LadeLueckenResult = {
   address_resolved: string;
   center: LngLat;
@@ -90,6 +107,7 @@ export type LadeLueckenResult = {
   grid: GapCell[];
   chargers: FeatureCollection;
   summary: { cells: number; gap_pct: number; worst_dist_km: number; charger_count: number; step_km?: number };
+  capacity?: ChargeCapacity;
 };
 
 // --- 3 Thementouren-Generator ----------------------------------------------
