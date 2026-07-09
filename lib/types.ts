@@ -145,7 +145,10 @@ export type GoldenHourResult = {
 };
 
 // --- 6 Naturwunder-Finder ---------------------------------------------------
-export type Wonder = EnrichFields & { id: string; name: string; type: string; lat: number; lng: number; distance_km: number; website: string | null };
+export type Wonder = EnrichFields & {
+  id: string; name: string; type: string; lat: number; lng: number; distance_km: number;
+  website: string | null; height?: number | null; ele?: number | null; designation?: string | null;
+};
 export type NaturwunderResult = { center: LngLat; wonders: Wonder[] };
 
 // --- 7 Schlechtwetter-Radar -------------------------------------------------

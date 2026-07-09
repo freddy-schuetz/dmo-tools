@@ -10,37 +10,49 @@ import type { GeocodeHit, NaturwunderResult, RichPoi } from "@/lib/types";
 
 const TYPE_META: Record<string, { emoji: string; color: string }> = {
   Wasserfall: { emoji: "💧", color: "#0ea5e9" },
+  Stromschnellen: { emoji: "🌊", color: "#0284c7" },
   Höhle: { emoji: "🕳️", color: "#78716c" },
-  Quelle: { emoji: "🌊", color: "#06b6d4" },
+  "Schlucht/Klamm": { emoji: "🏞️", color: "#0d9488" },
+  Vulkan: { emoji: "🌋", color: "#b91c1c" },
+  Krater: { emoji: "🌋", color: "#dc2626" },
+  Gletscher: { emoji: "🧊", color: "#38bdf8" },
+  Düne: { emoji: "🏜️", color: "#d97706" },
+  Thermalquelle: { emoji: "♨️", color: "#e11d48" },
+  Findling: { emoji: "🪨", color: "#57534e" },
+  Fossilienfundstelle: { emoji: "🦕", color: "#92400e" },
+  Quelle: { emoji: "💦", color: "#06b6d4" },
   Felsentor: { emoji: "🪨", color: "#a16207" },
   Doline: { emoji: "⭕", color: "#57534e" },
   Felswand: { emoji: "🧗", color: "#b45309" },
   Felsformation: { emoji: "🪨", color: "#a16207" },
   "Naturdenkmal-Baum": { emoji: "🌳", color: "#16a34a" },
+  Naturdenkmal: { emoji: "⭐", color: "#ca8a04" },
   Naturwunder: { emoji: "✨", color: "#64748b" },
 };
 
 const METHOD: MethodContent = {
   intro:
-    "Naturwunder sind in OpenStreetMap über viele einzelne Tags verstreut. Wir sammeln sie erstmals gebündelt auf einer Karte und reichern die bekanntesten mit Wikipedia-Wissen, freien Fotos und einer KI-Einordnung an.",
+    "Naturwunder sind in OpenStreetMap über viele einzelne Tags verstreut. Wir sammeln 18 Typen gebündelt auf einer Karte — von Wasserfällen über Vulkane und Klammen bis zu Fossilienfundstellen — und reichern die bekanntesten mit Wikipedia-Wissen, Fotos und KI-Einordnung an.",
   sources: [
-    "OpenStreetMap (Overpass API) — Wasserfälle, Höhlen, Quellen, Felsentore, Naturdenkmäler im Umkreis von 20 km",
+    "OpenStreetMap (Overpass API) — 18 Naturwunder-Typen im Umkreis von 20 km: Wasserfälle, Stromschnellen, Höhlen, Schluchten/Klammen, Vulkane & Krater, Gletscher, Dünen, Thermalquellen, Findlinge, Fossilienfundstellen, Felsentore, Dolinen, Felswände, amtliche Naturdenkmäler u. a.",
     "Wikipedia (REST-API) — Kurzbeschreibung, freies Foto und Quell-Link, sofern verknüpft",
     "FOSSGIS-Valhalla — fußläufige Route vom Suchort zum Spot",
   ],
   steps: [
-    "Wir suchen alle Natur-Highlights im Umkreis aus OpenStreetMap.",
-    "Benannte und über Wikipedia/Wikidata belegte Wunder ranken wir nach oben — die zeigen wir zuerst.",
-    "Für die Top-Spots holen wir Wikipedia-Text + freies Foto und lassen eine KI in einem Satz einordnen, warum sich der Ort lohnt.",
-    "Auf Wunsch berechnen wir die Route direkt auf der Karte.",
+    "Wir suchen alle Natur-Highlights im Umkreis — seltene „Wow“-Typen in einer eigenen Abfrage, damit sie nicht von häufigen Felsen/Quellen verdrängt werden.",
+    "Benannte und über Wikipedia/Wikidata belegte Wunder ranken wir nach oben.",
+    "Für Abwechslung mischen wir die Typen (Round-Robin) — statt 30 Wasserfällen siehst du die Bandbreite der Region.",
+    "Die Top-Spots bekommen Wikipedia-Text + Foto + KI-Satz; dazu Fallhöhe/Höhenlage, wo OSM sie kennt.",
   ],
   scoring: [
-    "Die KI-Einordnung basiert ausschließlich auf den echten Wikipedia-/OSM-Fakten des jeweiligen Spots — ohne diese Fakten bleibt sie leer (keine erfundenen Angaben).",
-    "Fotos stammen nur aus offenen Quellen (Wikipedia/Wikimedia Commons); die Quelle ist verlinkt.",
+    "Häufige Typen (Quellen, Felsen, Felswände) zählen nur mit Namen — unbenannte Massenware fliegt raus.",
+    "Die KI-Einordnung basiert ausschließlich auf den echten Wikipedia-/OSM-Fakten — ohne Fakten bleibt sie leer.",
+    "Fotos nur aus offenen Quellen (Wikipedia/Wikimedia Commons); Quelle verlinkt.",
   ],
   limits: [
-    "Unbenannte oder in OSM nicht verknüpfte Naturphänomene erscheinen ohne Text/Foto — sie sind trotzdem real.",
-    "Die Datendichte schwankt je Region stark; in gut gepflegten Gebieten ist das Ergebnis reicher.",
+    "Nicht jede Region hat Vulkane oder Gletscher — angezeigt wird, was die Region wirklich hergibt.",
+    "Unbenannte oder nicht verknüpfte Naturphänomene erscheinen ohne Text/Foto — sie sind trotzdem real.",
+    "Die Datendichte schwankt je Region; in gut gepflegten Gebieten ist das Ergebnis reicher.",
   ],
 };
 
@@ -83,7 +95,11 @@ export default function Naturwunder() {
         lng: w.lng,
         emoji: TYPE_META[w.type]?.emoji ?? "✨",
         color: TYPE_META[w.type]?.color ?? "#64748b",
-        category_label: w.type,
+        category_label: [
+          w.type,
+          w.height ? `↕ ${w.height} m` : null,
+          w.ele ? `⛰ ${w.ele} m ü. M.` : null,
+        ].filter(Boolean).join(" · "),
         distance_km: w.distance_km,
         description: w.description,
         ai_why: w.ai_why,
@@ -93,6 +109,7 @@ export default function Naturwunder() {
         website: w.website,
         phone: w.phone,
         wheelchair: w.wheelchair,
+        badges: w.designation ? [w.designation] : undefined,
       }));
   }, [result, active]);
 
@@ -102,8 +119,9 @@ export default function Naturwunder() {
         <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-brand-accent">Naturwunder-Finder</p>
         <h1 className="mb-3 text-3xl font-bold text-brand sm:text-4xl">Die Naturwunder deiner Region</h1>
         <p className="mx-auto max-w-2xl text-slate-600">
-          Wasserfälle, Höhlen, Quellen, Felsentore und Naturdenkmäler — verstreut in OpenStreetMap,
-          hier gesammelt auf einer Karte, mit Wikipedia-Wissen, Fotos und Route.
+          Wasserfälle, Höhlen, Klammen, Vulkane, Gletscher, Thermalquellen, Findlinge,
+          Fossilienfundstellen und mehr — 18 Naturwunder-Typen aus OpenStreetMap,
+          gesammelt auf einer Karte, mit Wikipedia-Wissen, Fotos und Route.
         </p>
       </header>
 
