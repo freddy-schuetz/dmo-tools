@@ -133,10 +133,20 @@ export type GenussResult = { center: LngLat; producers: Producer[] };
 export type PhotoSpot = EnrichFields & {
   id: string; name: string; cat: string; lat: number; lng: number;
   distance_km: number; faces_sunset: boolean; elevation: number | null;
+  dir_match?: boolean; panorama?: boolean; water_reflection?: boolean;
 };
+export type GlowDay = { day: string; date: string; score: number; low: number; mid: number; high: number };
 export type GoldenHourResult = {
   center: LngLat;
   date: string;
+  mode?: "sunset" | "sunrise";
+  sun?: {
+    event: string; event_time: string; azimuth: number;
+    phases: { label: string; from: string | null; to: string | null }[];
+    arrive_by: string | null; sunset_time: string; sunrise_time: string;
+  };
+  glow?: { today: GlowDay; week: GlowDay[] } | null;
+  moon?: { pct: number; label: string; full_hint: boolean } | null;
   sunset_time: string;
   sunrise_time: string;
   sunset_azimuth: number;
