@@ -11,7 +11,7 @@ import { usePolling } from "@/lib/usePolling";
 import type { GeocodeHit, RichPoi, RuheResult } from "@/lib/types";
 
 const TYPE_EMOJI: Record<string, string> = {
-  Gipfel: "🏔️", Aussichtspunkt: "👁️", Park: "🌳", Wald: "🌲", Schutzgebiet: "🌿",
+  Gipfel: "🏔️", Aussichtspunkt: "👁️", Park: "🌳", Garten: "🌷", Friedhof: "🕊️", Wald: "🌲", Schutzgebiet: "🌿",
 };
 
 function scoreColor(s: number) {
@@ -31,7 +31,8 @@ const METHOD: MethodContent = {
     "Wir rastern die Region und berechnen je Zelle die Distanz zur nächsten Lärmquelle → Ruhe-Heatmap + Ruhe-Index.",
     "Jeder Natur-Ort bekommt zwei Werte: Abstand zum Verkehrslärm UND Abstand zu bekannten Touristen-Hotspots.",
     "Für die Klangkulisse prüfen wir Bäche in Hörweite (< 350 m), Wald/Park — und welche Vögel laut GBIF hier dokumentiert sind.",
-    "Aus den stillsten benachbarten Orten baut Valhalla automatisch einen Stille-Spaziergang (Rundweg).",
+    "„Ruhe in deiner Nähe“ zeigt zusätzlich die besten Orte ≤ 3,5 km um deinen Standort — inkl. Stadtparks, Gärten und Friedhöfen als grüne Oasen, auch wenn sie absolut nicht mit dem Wald weit draußen konkurrieren.",
+    "Der Stille-Spaziergang startet bevorzugt an deinem Standort (Rundweg über stille Orte in Gehweite); gibt es dort nichts, ab dem stillsten Ort der Region.",
   ],
   scoring: [
     "Stille-Score = 60 % Verkehrslärm-Distanz (4 km = Maximum) + 40 % Hotspot-Distanz (5 km = Maximum).",
@@ -106,25 +107,34 @@ export default function RuheFinder() {
 
   const pois = useMemo<RichPoi[]>(() => {
     if (!result) return [];
-    return result.quiet_spots.map((s) => ({
+    const mapSpot = (s: NonNullable<typeof result>["quiet_spots"][number], near: boolean): RichPoi => ({
       id: s.id,
       name: s.name,
       lat: s.lat,
       lng: s.lng,
       emoji: TYPE_EMOJI[s.type] ?? "🍃",
       color: scoreColor(s.stille_score),
-      category_label: s.type,
+      category_label: s.distance_km != null ? `${s.type} · ${s.distance_km} km` : s.type,
       meta_right: `Stille ${s.stille_score}/100`,
       description: s.description,
       ai_why: s.ai_why,
       image: s.image,
       wiki_url: s.wiki_url,
       badges: [
+        ...(near ? ["📍 in deiner Nähe"] : []),
+        ...(s.oasis ? ["🌳 Grüne Oase im Stadtlärm"] : []),
         `🚗 Verkehr ${s.nearest_noise_km} km entfernt`,
         ...(s.crowd_km != null ? [`👥 Hotspots ${s.crowd_km} km entfernt`] : []),
         ...(s.sounds ?? []),
       ],
-    }));
+    });
+    // Erst „Ruhe in deiner Nähe" (Grugapark & Co.), dann die stillsten Orte der Region
+    const nearby = result.nearby_spots ?? [];
+    const nearIds = new Set(nearby.map((s) => s.id));
+    return [
+      ...nearby.map((s) => mapSpot(s, true)),
+      ...result.quiet_spots.filter((s) => !nearIds.has(s.id)).map((s) => mapSpot(s, (s.distance_km ?? 99) <= 3.5)),
+    ];
   }, [result]);
 
   const walkLines = useMemo(() => {
@@ -216,7 +226,8 @@ export default function RuheFinder() {
                 <div>
                   <h2 className="font-bold text-teal-800">🚶 Stille-Spaziergang (automatisch erstellt)</h2>
                   <p className="mt-1 text-sm text-teal-700">
-                    Rundweg <strong>{result.stille_route.distance_km} km</strong> · ca. <strong>{result.stille_route.duration_min} Min</strong> — über {result.stille_route.stops.join(" → ")}
+                    Rundweg ab <strong>{result.stille_route.start_label === "Mein Standort" ? "deinem Standort" : result.stille_route.start_label}</strong>:{" "}
+                    <strong>{result.stille_route.distance_km} km</strong> · ca. <strong>{result.stille_route.duration_min} Min</strong> — über {result.stille_route.stops.join(" → ")}
                   </p>
                 </div>
                 <button
