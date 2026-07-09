@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
 import MethodBox, { type MethodContent } from "@/components/MethodBox";
@@ -40,7 +40,12 @@ export default function LadenErleben() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const { status, result, errorMessage } = usePolling<LadenErlebenResult>(token);
+
+  useEffect(() => {
+    if (selectedId) document.getElementById(`station-${selectedId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [selectedId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -67,7 +72,19 @@ export default function LadenErleben() {
       type: "FeatureCollection",
       features: result.stations.map((s) => ({
         type: "Feature",
-        properties: { cat: "charger", name: s.name, sub: `${s.max_kw ?? "?"} kW · ${s.nearby.length} Erlebnisse nah`, color: s.fast ? "#16a34a" : "#0ea5e9" },
+        properties: {
+          id: s.id,
+          name: s.name,
+          emoji: "⚡",
+          category_label: s.operator ? `Ladestation · ${s.operator}` : "Ladestation",
+          desc: [
+            s.max_kw ? `${s.max_kw} kW${s.fast ? " · Schnelllader" : ""}` : null,
+            s.connectors.length ? s.connectors.join(", ") : null,
+            s.nearby.length ? `In der Nähe: ${s.nearby.slice(0, 4).map((n) => n.name).join(", ")}` : "Keine Erlebnisse im 600-m-Radius",
+          ].filter(Boolean).join(" · "),
+          gmaps: `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`,
+          color: s.fast ? "#16a34a" : "#0ea5e9",
+        },
         geometry: { type: "Point", coordinates: [s.lng, s.lat] },
       })),
     };
@@ -107,12 +124,14 @@ export default function LadenErleben() {
             pois={pois}
             markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
             heightClass="h-[420px]"
+            onSelect={setSelectedId}
+            selectedId={selectedId}
           />
-          <p className="-mt-4 text-center text-xs text-slate-500">🟩 Schnelllader · 🔵 Normallader · anklickbar</p>
+          <p className="-mt-4 text-center text-xs text-slate-500">⚡ grün = Schnelllader · Punkt anklicken für kW, Stecker &amp; Erlebnisse</p>
 
           <ul className="space-y-3">
             {result.stations.map((s) => (
-              <li key={s.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+              <li key={s.id} id={`station-${s.id}`} className={`rounded-2xl bg-white p-4 shadow-sm ring-1 transition ${selectedId === s.id ? "ring-2 ring-brand-accent" : "ring-slate-200"}`}>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-semibold text-brand">⚡ {s.name}</span>
                   <span className="flex items-center gap-2 text-sm">

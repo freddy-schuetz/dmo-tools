@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AddressSearch from "@/components/AddressSearch";
 import IsoMapDynamic from "@/components/IsoMapDynamic";
 import MethodBox, { type MethodContent } from "@/components/MethodBox";
 import AboutSection from "@/components/AboutSection";
 import { ErrorBox, RunningBox } from "@/components/StatusBox";
 import { usePolling } from "@/lib/usePolling";
+import type { LineLayer } from "@/components/IsoMap";
 import type { FeatureCollection, GeocodeHit, LadenWandernResult } from "@/lib/types";
 
 const METHOD: MethodContent = {
@@ -40,7 +41,13 @@ export default function LadenWandern() {
   const [hit, setHit] = useState<GeocodeHit | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const { status, result, errorMessage } = usePolling<LadenWandernResult>(token);
+
+  // Klick auf Karten-Punkt: zugehörige Karte hervorheben + hinscrollen
+  useEffect(() => {
+    if (selectedId) document.getElementById(`spot-${selectedId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [selectedId]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -67,10 +74,26 @@ export default function LadenWandern() {
       type: "FeatureCollection",
       features: result.spots.map((s) => ({
         type: "Feature",
-        properties: { cat: "spot", name: s.name, sub: s.trail_hint ?? "", color: s.fast ? "#16a34a" : "#0ea5e9" },
+        properties: {
+          id: s.id,
+          name: s.name,
+          emoji: "⚡",
+          category_label: "Ladesäule am Wanderparkplatz",
+          desc: [s.max_kw ? `${s.max_kw} kW${s.fast ? " · Schnelllader" : ""}` : null, s.parking, s.trail_hint ? `🥾 ${s.trail_hint}` : null].filter(Boolean).join(" · "),
+          meta_right: `${s.distance_km} km`,
+          gmaps: gmaps(s.lat, s.lng),
+          komoot: `https://www.komoot.de/plan/@${s.trail_lat ?? s.lat},${s.trail_lng ?? s.lng},13z`,
+          color: s.fast ? "#16a34a" : "#0ea5e9",
+        },
         geometry: { type: "Point", coordinates: [s.lng, s.lat] },
       })),
     };
+  }, [result]);
+
+  // Wanderwege-Geometrie als grün-gestrichelte Linien
+  const lines = useMemo<LineLayer[]>(() => {
+    if (!result?.trails?.features?.length) return [];
+    return [{ id: "trails", data: result.trails, color: "#16a34a", width: 3, dashed: true }];
   }, [result]);
 
   return (
@@ -104,14 +127,17 @@ export default function LadenWandern() {
           <IsoMapDynamic
             center={[result.center.lng, result.center.lat]}
             zones={[]}
+            lines={lines}
             pois={pois}
             markers={[{ lat: result.center.lat, lng: result.center.lng, color: "#1e3a5f" }]}
             heightClass="h-[420px]"
+            onSelect={setSelectedId}
+            selectedId={selectedId}
           />
-          <p className="-mt-4 text-center text-xs text-slate-500">🟩 Schnelllader · 🔵 Normallader</p>
+          <p className="-mt-4 text-center text-xs text-slate-500">⚡ Ladesäule (grün = Schnelllader) · 🟩 grün-gestrichelt = Wanderwege · Punkt anklicken für Infos</p>
           <ul className="space-y-3">
             {result.spots.map((s) => (
-              <li key={s.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+              <li key={s.id} id={`spot-${s.id}`} className={`rounded-2xl bg-white p-4 shadow-sm ring-1 transition ${selectedId === s.id ? "ring-2 ring-brand-accent" : "ring-slate-200"}`}>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-semibold text-brand">🥾⚡ {s.name}</span>
                   <span className="flex items-center gap-2 text-sm">

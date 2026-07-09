@@ -178,4 +178,4 @@ export type ChargeHikeSpot = {
   max_kw: number | null; fast: boolean; parking: string | null; trail_hint: string | null;
   trail_lat?: number; trail_lng?: number;
 };
-export type LadenWandernResult = { center: LngLat; spots: ChargeHikeSpot[] };
+export type LadenWandernResult = { center: LngLat; spots: ChargeHikeSpot[]; trails?: FeatureCollection };
