@@ -8,8 +8,10 @@ export async function rainviewerTiles(): Promise<string[] | null> {
     const past = d.radar?.past ?? [];
     const last = past.length ? past[past.length - 1].path : null;
     if (!host || !last) return null;
-    // {host}{path}/{size}/{z}/{x}/{y}/{colorScheme}/{smooth_snow}.png — Schema 2 = Universal Blue
-    return [`${host}${last}/256/{z}/{x}/{y}/2/1_1.png`];
+    // {host}{path}/{size}/{z}/{x}/{y}/{colorScheme}/{smooth_snow}.png — Schema 2 = Universal Blue.
+    // 512er-Kacheln = doppelte Aufloesung; nativer Max-Zoom ist 7 (darueber kommt eine
+    // "Zoom Level not supported"-Textkachel) -> Source braucht maxzoom:7 (siehe RasterLayer).
+    return [`${host}${last}/512/{z}/{x}/{y}/2/1_1.png`];
   } catch {
     return null;
   }

@@ -97,7 +97,8 @@ export default function Schlechtwetter() {
     }));
   }, [result, openOnly, kidsOnly]);
 
-  const rasterLayers = radarOn && radarTiles ? [{ id: "rain", tiles: radarTiles, opacity: 0.6 }] : [];
+  // maxzoom 7: RainViewers nativer Max-Zoom — darüber streckt MapLibre die Kacheln
+  const rasterLayers = radarOn && radarTiles ? [{ id: "rain", tiles: radarTiles, opacity: 0.6, tileSize: 512, maxzoom: 7 }] : [];
   const hours = result?.weather.hours ?? [];
 
   return (
