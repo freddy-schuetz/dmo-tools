@@ -70,6 +70,32 @@ export type RichPoi = {
 // --- 1 Destinations-Datencheck ---------------------------------------------
 export type AttrStat = { key: string; label: string; filled: number; total: number; pct: number };
 export type QuickWin = { issue: string; count: number; examples: string[] };
+
+// v4: KI-Sicht-Beispiel (Template-Konsequenz je Datenlücke, deterministisch — keine KI)
+export type AiViewExample = {
+  name: string;
+  cat_label: string;
+  missing: string[];
+  consequence: string;
+};
+
+// v4: Wikipedia-Schaufenster (echte Aufrufe/Monat je Top-Sehenswürdigkeit)
+export type WikiShowcase = {
+  with_article: { name: string; views_month: number | null; url: string }[];
+  missing: string[];
+  article_count: number;
+  sight_count: number;
+};
+
+// v4: Regionen-Duell (zweiter Audit-Lauf, gleicher Radius)
+export type DatencheckCompare = {
+  address: string;
+  poi_total: number;
+  score: number;
+  attributes: AttrStat[];
+  categories: { key: string; label: string; count: number }[];
+};
+
 export type DatencheckResult = {
   address_resolved: string;
   center: LngLat;
@@ -79,6 +105,10 @@ export type DatencheckResult = {
   attributes: AttrStat[];
   score: number;
   quick_wins: QuickWin[];
+  ai_view?: AiViewExample[];
+  wiki_showcase?: WikiShowcase | null;
+  compare?: DatencheckCompare | null;
+  // map_samples-Properties (v4): miss (Attribut-Keys), edit_url (OSM-Editor-Link)
   map_samples: FeatureCollection;
 };
 
